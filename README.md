@@ -1,4 +1,4 @@
-To start the program named Snake, which is hosted on GitHub, follow these steps:
+To start the program named Snake v0.6, which is hosted on GitHub, follow these steps:
 
     Clone the repository to your local machine using the URL from GitHub:
 
