@@ -6,6 +6,7 @@ using System.Drawing.Text;
 using System.Linq;
 using System.Windows.Forms;
 using Snake.Models;
+using static Snake.Models.GameState;
 
 namespace Snake.Views
 {
@@ -1158,386 +1159,238 @@ namespace Snake.Views
         {
             if (state?.Snake == null || state.Snake.Count == 0) return;
 
+            // Grid-Größen berechnen
             float cw = boardRect.Width / (float)state.BoardWidth;
             float ch = boardRect.Height / (float)state.BoardHeight;
+            float thickness = Math.Min(cw, ch) * 0.8f;
 
-            var pts = state.Snake.Select(seg => new PointF(
-                boardRect.Left + seg.X * cw + cw / 2f,
-                boardRect.Top + seg.Y * ch + ch / 2f)).ToList();
+            // Punkte berechnen
+            var points = state.Snake.Select(p => new PointF(
+                boardRect.Left + p.X * cw + cw / 2f,
+                boardRect.Top + p.Y * ch + ch / 2f
+            )).ToArray();
 
-            if (pts.Count == 1)
+            if (points.Length < 2)
             {
-                DrawSnakeHead(g, pts[0], Math.Min(cw, ch) * 0.46f);
+                DrawElegantHead(g, points[0], thickness, new PointF(1, 0), state);
                 return;
             }
 
-            float segmentThickness = Math.Min(cw, ch) * 0.88f;
-            Color bodyColor = AccentWarm;
-
-            // --- NEU: GHOST POWER-UP VISUAL EFFECT ---
-            if (state.CurrentPowerUp == GameState.PowerUpType.Ghost)
+            // Farbe basierend auf Power-Up
+            Color bodyColor = state.CurrentPowerUp switch
             {
-                bodyColor = Color.FromArgb(200, 220, 255); // Hellblau-transparent
-                // Flackern kurz vor Ende
-                if (state.PowerUpDuration < 30 && (_time * 10) % 2 > 1)
-                    bodyColor = AccentWarm;
+                GameState.PowerUpType.Magnet => Color.Cyan,
+                GameState.PowerUpType.Ghost => Color.FromArgb(180, 220, 255),
+                GameState.PowerUpType.DoubleScore => Color.Magenta,
+                _ => Color.FromArgb(100, 255, 100) // Standard Grün
+            };
+
+            // Elegante Körperlinie zeichnen
+            using (var bodyPen = new Pen(bodyColor, thickness))
+            {
+                bodyPen.LineJoin = LineJoin.Round;
+                bodyPen.StartCap = LineCap.Round;
+                bodyPen.EndCap = LineCap.Round;
+                g.DrawLines(bodyPen, points);
             }
 
-            // --- NEU: MAGNET POWER-UP VISUAL EFFECT ---
-            if (state.CurrentPowerUp == GameState.PowerUpType.Magnet)
+            // Subtile Power-Up Effekte
+            if (state.CurrentPowerUp != GameState.PowerUpType.None)
             {
-                bodyColor = Color.Cyan;
+                DrawSubtlePowerUpEffects(g, points, thickness, state);
             }
 
-            for (int i = 1; i < pts.Count; i++)
-            {
-                if (i == pts.Count - 1) continue;
-
-                var p1 = pts[i];
-                var p2 = pts[i + 1];
-
-                float radius1 = (segmentThickness / 2f) * (1.0f - (i / (float)pts.Count) * 0.3f);
-                float radius2 = (segmentThickness / 2f) * (1.0f - ((i + 1) / (float)pts.Count) * 0.3f);
-                float avgRadius = (radius1 + radius2) / 2f;
-
-                using (var connectBrush = new LinearGradientBrush(p1, p2,
-                    ControlPaint.Light(bodyColor, 0.3f),
-                    ControlPaint.Dark(bodyColor, 0.1f)))
-                using (var connectPen = new Pen(connectBrush, avgRadius * 2f))
-                {
-                    connectPen.StartCap = LineCap.Round;
-                    connectPen.EndCap = LineCap.Round;
-                    g.DrawLine(connectPen, p1, p2);
-                }
-            }
-
-            for (int i = 1; i < pts.Count; i++)
-            {
-                var center = pts[i];
-                float radius = segmentThickness / 2f;
-                float sizeFactor = 1.0f - (i / (float)pts.Count) * 0.3f;
-                float actualRadius = radius * sizeFactor;
-
-                using (var glowBrush = new SolidBrush(Color.FromArgb(40, bodyColor)))
-                {
-                    float glowRadius = actualRadius + 8f;
-                    g.FillEllipse(glowBrush,
-                        center.X - glowRadius, center.Y - glowRadius,
-                        glowRadius * 2, glowRadius * 2);
-                }
-
-                using (var shadowBrush = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
-                {
-                    g.FillEllipse(shadowBrush,
-                        center.X - actualRadius + 2, center.Y - actualRadius + 2,
-                        actualRadius * 2, actualRadius * 2);
-                }
-
-                using (var darkBase = new SolidBrush(ControlPaint.Dark(bodyColor, 0.3f)))
-                {
-                    g.FillEllipse(darkBase,
-                        center.X - actualRadius, center.Y - actualRadius,
-                        actualRadius * 2, actualRadius * 2);
-                }
-
-                using (var bodyBrush = new LinearGradientBrush(
-                    new PointF(center.X, center.Y - actualRadius),
-                    new PointF(center.X, center.Y + actualRadius),
-                    ControlPaint.Light(bodyColor, 0.4f),
-                    ControlPaint.Dark(bodyColor, 0.1f)))
-                {
-                    float mainRadius = actualRadius * 0.95f;
-                    g.FillEllipse(bodyBrush,
-                        center.X - mainRadius, center.Y - mainRadius,
-                        mainRadius * 2, mainRadius * 2);
-                }
-
-                using (var highlightBrush = new SolidBrush(Color.FromArgb(80, 255, 255, 255)))
-                {
-                    float hlRadius = actualRadius * 0.4f;
-                    g.FillEllipse(highlightBrush,
-                        center.X - hlRadius, center.Y - actualRadius * 0.5f,
-                        hlRadius * 2, hlRadius * 1.5f);
-                }
-
-                using (var specBrush = new SolidBrush(Color.FromArgb(120, 255, 255, 255)))
-                {
-                    float specRadius = actualRadius * 0.2f;
-                    g.FillEllipse(specBrush,
-                        center.X - specRadius, center.Y - actualRadius * 0.4f,
-                        specRadius * 2, specRadius * 2);
-                }
-
-                using (var outlinePen = new Pen(ControlPaint.Dark(bodyColor, 0.5f), 1.5f))
-                {
-                    g.DrawEllipse(outlinePen,
-                        center.X - actualRadius, center.Y - actualRadius,
-                        actualRadius * 2, actualRadius * 2);
-                }
-            }
-
-            if (state.JustAte && state.FoodDigestionProgress > 0 && pts.Count > 1)
-            {
-                float progressNormalized = state.FoodDigestionProgress / 100f;
-                int targetSegment = Math.Min((int)(progressNormalized * (pts.Count - 1)), pts.Count - 1);
-
-                if (targetSegment >= 0 && targetSegment < pts.Count)
-                {
-                    var foodCenter = pts[targetSegment];
-                    float foodRadius = segmentThickness * 0.35f;
-
-                    float pulse = 1.0f + (float)Math.Sin(_time * 12) * 0.15f;
-                    float animRadius = foodRadius * pulse;
-
-                    for (int i = 3; i >= 0; i--)
-                    {
-                        float glowSize = animRadius * (1.8f + i * 0.4f);
-                        int alpha = 50 / (i + 1);
-                        using (var glowBrush = new SolidBrush(Color.FromArgb(alpha, FoodGlowColor)))
-                        {
-                            g.FillEllipse(glowBrush,
-                                foodCenter.X - glowSize, foodCenter.Y - glowSize,
-                                glowSize * 2, glowSize * 2);
-                        }
-                    }
-
-                    using (var foodBrush = new SolidBrush(FoodColor))
-                    {
-                        g.FillEllipse(foodBrush,
-                            foodCenter.X - animRadius, foodCenter.Y - animRadius,
-                            animRadius * 2, animRadius * 2);
-                    }
-
-                    using (var hlBrush = new SolidBrush(Color.FromArgb(180, 255, 255, 150)))
-                    {
-                        float hlSize = animRadius * 0.4f;
-                        g.FillEllipse(hlBrush,
-                            foodCenter.X - hlSize, foodCenter.Y - animRadius * 0.5f,
-                            hlSize * 2, hlSize * 2);
-                    }
-                }
-            }
-
-            DrawSnakeHead(g, pts[0], Math.Min(cw, ch) * 0.46f);
+            // Kopf zeichnen
+            PointF dirVector = new PointF(points[0].X - points[1].X, points[0].Y - points[1].Y);
+            DrawElegantHead(g, points[0], thickness, dirVector, state);
         }
 
-        private void DrawSnakeHead(Graphics g, PointF center, float baseRadius)
+        private void DrawSubtlePowerUpEffects(Graphics g, PointF[] points, float thickness, GameState state)
         {
-            PointF dir = new PointF(1, 0);
-            if (_state?.Snake != null && _state.Snake.Count >= 2)
+            float pulse = (float)(Math.Sin(DateTime.Now.TimeOfDay.TotalMilliseconds * 0.005) * 0.2 + 0.8);
+
+            switch (state.CurrentPowerUp)
             {
-                var head = _state.Snake[0];
-                var next = _state.Snake[1];
-                float dx = (head.X - next.X);
-                float dy = (head.Y - next.Y);
-                Rectangle boardRect = GetBoardRect();
-                float cw = boardRect.Width / (float)_state.BoardWidth;
-                float ch = boardRect.Height / (float)_state.BoardHeight;
-                dir = new PointF(dx * cw, dy * ch);
-                var len = (float)Math.Sqrt(dir.X * dir.X + dir.Y * dir.Y);
-                if (len > 0.001f) { dir.X /= len; dir.Y /= len; }
-                else dir = new PointF(1, 0);
+                case GameState.PowerUpType.Magnet:
+                    // Subtile magnetische Linien
+                    using (var effectPen = new Pen(Color.FromArgb(80, 0, 200, 200), 1))
+                    {
+                        effectPen.DashStyle = DashStyle.Dot;
+                        effectPen.DashPattern = new float[] { 2, 3 };
+                        g.DrawLines(effectPen, points);
+                    }
+                    break;
+
+                case GameState.PowerUpType.Ghost:
+                    // Sehr subtile geisterhafte Umrisse
+                    using (var ghostPen = new Pen(Color.FromArgb(40, 255, 255, 255), thickness + 2))
+                    {
+                        ghostPen.LineJoin = LineJoin.Round;
+                        g.DrawLines(ghostPen, points);
+                    }
+                    break;
+
+                case GameState.PowerUpType.DoubleScore:
+                    // Feine gepunktete Linie für Double Score
+                    using (var scorePen = new Pen(Color.FromArgb(100, 255, 0, 255), 1))
+                    {
+                        scorePen.DashStyle = DashStyle.Dash;
+                        scorePen.DashPattern = new float[] { 3, 2 };
+                        g.DrawLines(scorePen, points);
+                    }
+                    break;
             }
+        }
 
-            float headWidth = baseRadius * 1.85f;
-            float headHeight = baseRadius * 1.85f;
-            float angle = (float)(Math.Atan2(dir.Y, dir.X) * 180.0 / Math.PI);
-            float breathe = 1f + 0.03f * (float)Math.Sin(_time * 6f);
+        private void DrawElegantHead(Graphics g, PointF center, float size, PointF direction, GameState state)
+        {
+            float angle = (float)(Math.Atan2(direction.Y, direction.X) * 180.0 / Math.PI);
+            float headSize = size * 1.3f;
 
-            var m = g.Transform;
+            var savedState = g.Save();
             g.TranslateTransform(center.X, center.Y);
             g.RotateTransform(angle);
-            g.TranslateTransform(-center.X, -center.Y);
 
-            var headRect = new RectangleF(
-                center.X - headWidth / 2f * breathe,
-                center.Y - headHeight / 2f * breathe,
-                headWidth * breathe,
-                headHeight * breathe);
-
-            Color headStartColor = AccentWarm;
-            Color headEndColor = Accent;
-
-            // --- NEU: GHOST POWER-UP HEAD EFFECT ---
-            if (_state?.CurrentPowerUp == GameState.PowerUpType.Ghost)
+            // Kopf-Farbe basierend auf Power-Up
+            Color headColor = state.CurrentPowerUp switch
             {
-                headStartColor = Color.FromArgb(200, 220, 255);
-                headEndColor = Color.FromArgb(180, 200, 255);
+                GameState.PowerUpType.Magnet => Color.Cyan,
+                GameState.PowerUpType.Ghost => Color.FromArgb(180, 220, 255),
+                GameState.PowerUpType.DoubleScore => Color.Magenta,
+                _ => Color.FromArgb(255, 255, 0) // Pac-Man Gelb
+            };
+
+            // Kopf als einfacher Kreis
+            RectangleF headRect = new RectangleF(-headSize / 2, -headSize / 2, headSize, headSize);
+
+            // Kopf füllen
+            using (var headBrush = new SolidBrush(headColor))
+            {
+                g.FillEllipse(headBrush, headRect);
             }
 
-            // --- NEU: MAGNET POWER-UP HEAD EFFECT ---
-            if (_state?.CurrentPowerUp == GameState.PowerUpType.Magnet)
-            {
-                headStartColor = Color.Cyan;
-                headEndColor = Color.LightBlue;
-            }
-
-            for (int i = 3; i >= 0; i--)
-            {
-                float glowExpand = 8f + i * 4f;
-                int alpha = 30 / (i + 1);
-                using (var glowBrush = new SolidBrush(Color.FromArgb(alpha, headStartColor)))
-                {
-                    var glowRect = new RectangleF(
-                        headRect.X - glowExpand,
-                        headRect.Y - glowExpand,
-                        headRect.Width + glowExpand * 2,
-                        headRect.Height + glowExpand * 2);
-                    g.FillEllipse(glowBrush, glowRect);
-                }
-            }
-
-            using (var shadowBrush = new SolidBrush(Color.FromArgb(140, 0, 0, 0)))
-            {
-                var shadowRect = new RectangleF(
-                    headRect.X + 3, headRect.Y + 3,
-                    headRect.Width, headRect.Height);
-                g.FillEllipse(shadowBrush, shadowRect);
-            }
-
-            using (var darkBase = new SolidBrush(ControlPaint.Dark(headStartColor, 0.35f)))
-            {
-                g.FillEllipse(darkBase, headRect);
-            }
-
-            using (var headBrush = new LinearGradientBrush(
-                new PointF(headRect.Left, headRect.Top),
-                new PointF(headRect.Left, headRect.Bottom),
-                ControlPaint.Light(headStartColor, 0.45f),
-                ControlPaint.Dark(headStartColor, 0.15f)))
-            {
-                var mainRect = new RectangleF(
-                    headRect.X + 2, headRect.Y + 2,
-                    headRect.Width - 4, headRect.Height - 4);
-                g.FillEllipse(headBrush, mainRect);
-            }
-
-            using (var highlightBrush = new SolidBrush(Color.FromArgb(90, 255, 255, 255)))
-            {
-                var highlightRect = new RectangleF(
-                    center.X - headWidth * 0.25f,
-                    center.Y - headHeight * 0.35f,
-                    headWidth * 0.5f,
-                    headHeight * 0.5f);
-                g.FillEllipse(highlightBrush, highlightRect);
-            }
-
-            using (var specBrush = new SolidBrush(Color.FromArgb(140, 255, 255, 255)))
-            {
-                var specRect = new RectangleF(
-                    center.X - headWidth * 0.15f,
-                    center.Y - headHeight * 0.3f,
-                    headWidth * 0.25f,
-                    headHeight * 0.22f);
-                g.FillEllipse(specBrush, specRect);
-            }
-
-            using (var outlinePen = new Pen(ControlPaint.Dark(headStartColor, 0.45f), 2f))
+            // Elegante Umrandung
+            using (var outlinePen = new Pen(Color.FromArgb(150, 0, 0, 0), 1.5f))
             {
                 g.DrawEllipse(outlinePen, headRect);
             }
 
-            using (var rimPen = new Pen(Color.FromArgb(60, 255, 255, 255), 1.5f))
+            // Pac-Man Mund (nur im Normalzustand)
+            if (state.CurrentPowerUp == GameState.PowerUpType.None)
             {
-                var rimRect = new RectangleF(
-                    headRect.X + 3, headRect.Y + 3,
-                    headRect.Width - 6, headRect.Height - 6);
-                g.DrawArc(rimPen, rimRect, 180, 180);
+                DrawPacManMouth(g, headSize);
             }
 
-            float eyeOffsetX = headWidth * 0.22f;
-            float eyeOffsetY = headHeight * 0.18f;
-            float eyeSize = Math.Max(5f, headHeight * 0.28f);
+            // Augen zeichnen
+            DrawElegantEyes(g, headSize, state);
 
-            using (var eyeShadow = new SolidBrush(Color.FromArgb(40, 0, 0, 0)))
-            using (var white = new SolidBrush(Color.FromArgb(250, 255, 255, 255)))
-            using (var pupil = new SolidBrush(Color.FromArgb(20, 20, 30)))
-            using (var gloss = new SolidBrush(Color.FromArgb(180, 255, 255, 255)))
-            using (var iris = new SolidBrush(Color.FromArgb(60, 200, 255)))
+            // Sehr subtile Power-Up Effekte um den Kopf
+            if (state.CurrentPowerUp != GameState.PowerUpType.None)
             {
-                var leftEyeRect = new RectangleF(
-                    center.X - eyeOffsetX - eyeSize,
-                    center.Y - eyeOffsetY - eyeSize,
-                    eyeSize * 2, eyeSize * 2);
-                g.FillEllipse(eyeShadow, leftEyeRect.X + 1, leftEyeRect.Y + 1, leftEyeRect.Width, leftEyeRect.Height);
-                g.FillEllipse(white, leftEyeRect);
-
-                g.FillEllipse(iris,
-                    center.X - eyeOffsetX - eyeSize * 0.6f,
-                    center.Y - eyeOffsetY - eyeSize * 0.6f,
-                    eyeSize * 1.2f, eyeSize * 1.2f);
-
-                g.FillEllipse(pupil,
-                    center.X - eyeOffsetX - eyeSize * 0.4f,
-                    center.Y - eyeOffsetY - eyeSize * 0.4f,
-                    eyeSize * 0.8f, eyeSize * 0.8f);
-
-                g.FillEllipse(gloss,
-                    center.X - eyeOffsetX - eyeSize * 0.65f,
-                    center.Y - eyeOffsetY - eyeSize * 0.7f,
-                    eyeSize * 0.5f, eyeSize * 0.5f);
-                g.FillEllipse(gloss,
-                    center.X - eyeOffsetX - eyeSize * 0.1f,
-                    center.Y - eyeOffsetY - eyeSize * 0.2f,
-                    eyeSize * 0.25f, eyeSize * 0.25f);
-
-                var rightEyeRect = new RectangleF(
-                    center.X + eyeOffsetX - eyeSize,
-                    center.Y - eyeOffsetY - eyeSize,
-                    eyeSize * 2, eyeSize * 2);
-                g.FillEllipse(eyeShadow, rightEyeRect.X + 1, rightEyeRect.Y + 1, rightEyeRect.Width, rightEyeRect.Height);
-                g.FillEllipse(white, rightEyeRect);
-
-                g.FillEllipse(iris,
-                    center.X + eyeOffsetX - eyeSize * 0.6f,
-                    center.Y - eyeOffsetY - eyeSize * 0.6f,
-                    eyeSize * 1.2f, eyeSize * 1.2f);
-
-                g.FillEllipse(pupil,
-                    center.X + eyeOffsetX - eyeSize * 0.4f,
-                    center.Y - eyeOffsetY - eyeSize * 0.4f,
-                    eyeSize * 0.8f, eyeSize * 0.8f);
-
-                g.FillEllipse(gloss,
-                    center.X + eyeOffsetX - eyeSize * 0.65f,
-                    center.Y - eyeOffsetY - eyeSize * 0.7f,
-                    eyeSize * 0.5f, eyeSize * 0.5f);
-                g.FillEllipse(gloss,
-                    center.X + eyeOffsetX - eyeSize * 0.1f,
-                    center.Y - eyeOffsetY - eyeSize * 0.2f,
-                    eyeSize * 0.25f, eyeSize * 0.25f);
+                DrawSubtleHeadEffects(g, headSize, state);
             }
 
-            float tongueWave = (float)Math.Sin(_time * 8) * 0.05f;
-            using (var tongueShadow = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
-            using (var tongueBrush = new LinearGradientBrush(
-                new PointF(center.X + headWidth * 0.3f, center.Y),
-                new PointF(center.X + headWidth * 0.7f, center.Y),
-                Color.FromArgb(255, 140, 120),
-                Color.FromArgb(220, 100, 80)))
+            g.Restore(savedState);
+        }
+
+        private void DrawPacManMouth(Graphics g, float headSize)
+        {
+            // Animierter Mundwinkel
+            float mouthAngle = 40f + (float)Math.Sin(DateTime.Now.TimeOfDay.TotalMilliseconds * 0.01) * 10f;
+
+            using (var mouthPath = new GraphicsPath())
             {
-                var shadowTip = new PointF(center.X + headWidth * 0.7f + 2, center.Y + 2);
-                var shadowLeft = new PointF(center.X + headWidth * 0.3f + 2, center.Y - headHeight * 0.08f + 2);
-                var shadowRight = new PointF(center.X + headWidth * 0.3f + 2, center.Y + headHeight * 0.08f + 2);
-                g.FillPolygon(tongueShadow, new[] { shadowLeft, shadowTip, shadowRight });
+                // Mund als Kreisausschnitt zeichnen
+                float startAngle = -mouthAngle / 2;
 
-                var tongueTip = new PointF(center.X + headWidth * 0.7f, center.Y + tongueWave * headHeight);
-                var tongueLeft = new PointF(center.X + headWidth * 0.3f, center.Y - headHeight * 0.08f);
-                var tongueRight = new PointF(center.X + headWidth * 0.3f, center.Y + headHeight * 0.08f);
-                g.FillPolygon(tongueBrush, new[] { tongueLeft, tongueTip, tongueRight });
+                // Rechteck für den Mund (in Rectangle konvertieren)
+                Rectangle mouthRect = new Rectangle(
+                    (int)(-headSize / 2), (int)(-headSize / 2),
+                    (int)headSize, (int)headSize);
 
-                using (var forkPen = new Pen(Color.FromArgb(220, 90, 70), 1.5f))
+                mouthPath.AddPie(mouthRect, startAngle, mouthAngle);
+
+                // Mund mit Schwarz füllen
+                using (var mouthBrush = new SolidBrush(Color.Black))
                 {
-                    g.DrawLine(forkPen,
-                        tongueTip.X, tongueTip.Y,
-                        tongueTip.X + headWidth * 0.08f, tongueTip.Y - headHeight * 0.06f);
-                    g.DrawLine(forkPen,
-                        tongueTip.X, tongueTip.Y,
-                        tongueTip.X + headWidth * 0.08f, tongueTip.Y + headHeight * 0.06f);
+                    g.FillPath(mouthBrush, mouthPath);
                 }
             }
+        }
 
-            g.Transform = m;
+        private void DrawElegantEyes(Graphics g, float headSize, GameState state)
+        {
+            float eyeSpacing = headSize * 0.2f;
+            float eyeSize = headSize * 0.12f;
+            float eyeX = headSize * 0.15f;
+
+            for (int i = -1; i <= 1; i += 2)
+            {
+                float eyeY = eyeSpacing * i * 0.5f;
+
+                // Einfache schwarze Augen (Pac-Man Style)
+                using (var eyeBrush = new SolidBrush(Color.Black))
+                {
+                    g.FillEllipse(eyeBrush, eyeX - eyeSize / 2, eyeY - eyeSize / 2, eyeSize, eyeSize);
+                }
+
+                // Bei Power-Ups: Farbige Akzente in den Augen
+                if (state.CurrentPowerUp != GameState.PowerUpType.None)
+                {
+                    Color eyeAccent = state.CurrentPowerUp switch
+                    {
+                        GameState.PowerUpType.Magnet => Color.Cyan,
+                        GameState.PowerUpType.Ghost => Color.White,
+                        GameState.PowerUpType.DoubleScore => Color.Magenta,
+                        _ => Color.White
+                    };
+
+                    float accentSize = eyeSize * 0.4f;
+                    using (var accentBrush = new SolidBrush(eyeAccent))
+                    {
+                        g.FillEllipse(accentBrush,
+                            eyeX - accentSize / 2, eyeY - accentSize / 2,
+                            accentSize, accentSize);
+                    }
+                }
+            }
+        }
+
+        private void DrawSubtleHeadEffects(Graphics g, float headSize, GameState state)
+        {
+            float pulse = (float)(Math.Sin(DateTime.Now.TimeOfDay.TotalMilliseconds * 0.008) * 0.3 + 0.7);
+
+            switch (state.CurrentPowerUp)
+            {
+                case GameState.PowerUpType.Magnet:
+                    // Sehr subtile magnetische Kreise
+                    using (var circlePen = new Pen(Color.FromArgb(60, 0, 255, 255), 1))
+                    {
+                        circlePen.DashStyle = DashStyle.Dash;
+                        float circleSize = headSize * 0.9f + pulse * 2;
+                        g.DrawEllipse(circlePen, -circleSize / 2, -circleSize / 2, circleSize, circleSize);
+                    }
+                    break;
+
+                case GameState.PowerUpType.Ghost:
+                    // Fast transparente Umrisse
+                    using (var ghostPen = new Pen(Color.FromArgb(30, 255, 255, 255), 1))
+                    {
+                        float ghostSize = headSize * 1.1f;
+                        g.DrawEllipse(ghostPen, -ghostSize / 2, -ghostSize / 2, ghostSize, ghostSize);
+                    }
+                    break;
+
+                case GameState.PowerUpType.DoubleScore:
+                    // Feine gepunktete Umrandung
+                    using (var scorePen = new Pen(Color.FromArgb(80, 255, 0, 255), 1))
+                    {
+                        scorePen.DashStyle = DashStyle.Dot;
+                        float scoreSize = headSize * 0.95f;
+                        g.DrawEllipse(scorePen, -scoreSize / 2, -scoreSize / 2, scoreSize, scoreSize);
+                    }
+                    break;
+            }
         }
 
         private void DrawGrowthWaves(Graphics g, Rectangle boardRect)
