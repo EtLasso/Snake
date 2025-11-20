@@ -1,29 +1,51 @@
-To start the program named Snake v0.6, which is hosted on GitHub, follow these steps:
+How to Start Snake
 
-    Clone the repository to your local machine using the URL from GitHub:
+    Visual Studio installed
 
-    text
+    Windows operating system
+
+Download the contents of the publish folder directly, which contains everything needed to run the game without building it yourself.
+
+
+    Download all files from the publish folder together to the same directory on your PC.
+
+    Double-click [Snake.exe] to launch the Snake game window and start playing immediately.
+
+Steps with Visual Studio
+
+    Clone the repository
+
+    bash
     git clone https://github.com/EtLasso/Snake.git
 
-    Open the project folder in a suitable IDE like Visual Studio, since the project contains C# code (e.g., with files like Program.cs, Form1.cs, and related MVC folders).
+    Open the project
 
-    Restore any dependencies/packages if needed (e.g., using NuGet package manager in Visual Studio).
+        Open the cloned folder in Visual Studio.
 
-    Build the solution to compile the code.
+    Restore dependencies
 
-    Run the program from the IDE (e.g., press F5 in Visual Studio) to start the Snake game.
-
-This project uses the Model-View-Controller (MVC) pattern with clear separation into Controllers, Models, and Views folders. The main game logic and interface are managed across these components, with game state handling and user input configured for a typical Windows Forms Application environment.
-
-In summary, the steps to start Snake are:
-
-    Clone the repo
-
-    Open in Visual Studio
+        Use the NuGet Package Manager to install any missing libraries if needed.
 
     Build the solution
 
-    Run the application
+        Press Ctrl + Shift + B or click on "Build Solution" to compile the project.
 
-This will launch the game window where you can play Snake.
-​
+    Run the game
+
+        Press F5 or click "Start" to launch the Snake game window.
+
+Project Structure
+
+    Controllers/ – Contains the logic and control code
+
+    Models/ – Manages the game state
+
+    Views/ – Handles the user interface
+
+    Other key files: Program.cs, Form1.cs
+
+Notes
+
+    The project follows the Model-View-Controller (MVC) pattern for a clean separation of concerns.
+
+    After starting the application, you can play Snake in the opened window.
