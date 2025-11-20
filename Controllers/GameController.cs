@@ -3,6 +3,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Snake.Models;
 using Snake.Views;
+using Snake.Systems;
 
 namespace Snake.Controllers
 {
@@ -13,6 +14,7 @@ namespace Snake.Controllers
         private readonly System.Windows.Forms.Timer _gameTimer;
         private bool _isPaused;
         private int _gameSpeed;
+        private int _lastScore = 0;
 
         // NEUE EVENTS für Navigation
         public event Action MainMenuRequested;
@@ -37,6 +39,40 @@ namespace Snake.Controllers
             _gameView.HighScoresRequested += OnHighScoresRequested;
 
             UpdateGameSpeed();
+
+            // Sound-Events verknüpfen
+            _gameState.OnScoreChanged += (score) =>
+            {
+                // Unterscheidung: War es normales Futter oder Bonus?
+                if (score > _lastScore)
+                {
+                    SoundManager.PlayEat();
+                    _lastScore = score;
+                }
+            };
+
+            _gameState.OnGameOverChanged += (isGameOver) =>
+            {
+                if (isGameOver) SoundManager.PlayDie();
+            };
+
+            _gameState.OnGameReset += () =>
+            {
+                _lastScore = 0;
+                SoundManager.PlayGameStart();
+            };
+
+            // Optional: Feedback bei Geschwindigkeitsänderung durch Tasten
+            _gameView.KeyPressed += (s, args) =>
+            {
+                // Kleiner Klick-Sound bei Tasten (außer Steuerung, das nervt sonst)
+                if (args.KeyCode == Keys.P || args.KeyCode == Keys.Escape ||
+                    args.KeyCode == Keys.Add || args.KeyCode == Keys.Subtract ||
+                    args.KeyCode == Keys.Oemplus || args.KeyCode == Keys.OemMinus)
+                {
+                    SoundManager.PlayClick();
+                }
+            };
         }
 
         public void Start()
@@ -61,10 +97,12 @@ namespace Snake.Controllers
                 if (_isPaused)
                 {
                     _gameTimer.Stop();
+                    SoundManager.PlayClick();
                 }
                 else
                 {
                     _gameTimer.Start();
+                    SoundManager.PlayClick();
                 }
             }
         }
@@ -78,18 +116,24 @@ namespace Snake.Controllers
                 if (_gameState.GameOver)
                 {
                     _gameTimer.Stop();
-                    
+
                     // Speichere Highscore bevor das Game Over Menu angezeigt wird
                     SaveHighScore();
-                    
+
                     // Get top high scores from the public HighScores property
                     var topScores = _gameState.HighScores
                         .OrderByDescending(hs => hs.Score)
                         .Take(5)
                         .ToList();
-                    
+
                     // Prüfe ob es ein neuer Highscore ist
                     bool isNewHighScore = topScores.Count == 0 || _gameState.Score >= topScores[0].Score;
+
+                    // Bonus-Sound für neuen Highscore
+                    if (isNewHighScore)
+                    {
+                        SoundManager.PlayBonus();
+                    }
 
                     _gameView.ShowGameOverMenu(
                         _gameState.Score,
@@ -113,12 +157,12 @@ namespace Snake.Controllers
             {
                 // Prüfe ob Score hoch genug für Top 10 ist
                 var currentHighScores = _gameState.HighScores.OrderByDescending(hs => hs.Score).ToList();
-                
+
                 if (currentHighScores.Count < 10 || _gameState.Score > currentHighScores.Last().Score)
                 {
                     // Standardname, könnte später durch Benutzereingabe ersetzt werden
                     string playerName = "Player";
-                    
+
                     // Prüfe ob es bereits einen Eintrag mit diesem Score gibt
                     if (!currentHighScores.Any(hs => hs.Score == _gameState.Score))
                     {
@@ -160,6 +204,7 @@ namespace Snake.Controllers
 
                 case Keys.Space:
                 case Keys.Escape:
+                case Keys.P:
                     Pause();
                     break;
 
@@ -176,6 +221,11 @@ namespace Snake.Controllers
                 case Keys.OemMinus:
                     DecreaseSpeed();
                     break;
+
+                case Keys.M:
+                    SoundManager.ToggleMute();
+                    SoundManager.PlayClick();
+                    break;
             }
         }
 
@@ -186,6 +236,7 @@ namespace Snake.Controllers
                 _gameSpeed -= 10;
                 _gameTimer.Interval = _gameSpeed;
                 UpdateGameSpeed();
+                SoundManager.PlayLevelUp();
             }
         }
 
@@ -196,6 +247,7 @@ namespace Snake.Controllers
                 _gameSpeed += 10;
                 _gameTimer.Interval = _gameSpeed;
                 UpdateGameSpeed();
+                SoundManager.PlayClick();
             }
         }
 

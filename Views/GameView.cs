@@ -15,6 +15,15 @@ namespace Snake.Views
         private readonly System.Windows.Forms.Timer _animTimer;
         private double _time = 0.0;
 
+        // --- NEU: Screen Shake Variablen ---
+        private float _shakeIntensity = 0f;
+        private Random _rng = new Random();
+
+        // --- NEU: CRT Cache ---
+        private TextureBrush _scanlineBrush;
+        private PathGradientBrush _vignetteBrush;
+        private bool _resourcesInitialized = false;
+
         // Visual collections
         private readonly List<Particle> _particles = new List<Particle>();
         private readonly List<StarField> _stars = new List<StarField>();
@@ -46,14 +55,14 @@ namespace Snake.Views
         private int _lastFps = 0;
 
         // Enhanced Theme colors - Cyber Neon Style
-        private readonly Color BgTop = Color.FromArgb(15, 15, 35);
-        private readonly Color BgBottom = Color.FromArgb(35, 15, 55);
+        private readonly Color BgTop = Color.FromArgb(10, 10, 20); // Etwas dunkler für CRT Kontrast
+        private readonly Color BgBottom = Color.FromArgb(25, 10, 40);
         private readonly Color Accent = Color.FromArgb(0, 255, 180);
         private readonly Color AccentWarm = Color.FromArgb(255, 80, 120);
         private readonly Color FoodColor = Color.FromArgb(255, 50, 50);
         private readonly Color FoodGlowColor = Color.FromArgb(255, 200, 0);
-        private readonly Color GridColor1 = Color.FromArgb(30, 30, 50);
-        private readonly Color GridColor2 = Color.FromArgb(25, 25, 45);
+        private readonly Color GridColor1 = Color.FromArgb(20, 20, 35);
+        private readonly Color GridColor2 = Color.FromArgb(15, 15, 30);
 
         private float _pulsePhase = 0f;
 
@@ -87,11 +96,132 @@ namespace Snake.Views
             // Maus-Events registrieren
             this.MouseClick += GameView_MouseClick;
             this.MouseMove += GameView_MouseMove;
+            this.Resize += GameView_Resize; // Wichtig für Vignette-Update
             this.Cursor = Cursors.Default;
 
             InitializeStarField();
             LoadStartBackground();
             LoadMainMenuBackground();
+        }
+
+        // --- NEUE POWER-UP METHODEN ---
+        private void DrawPowerUpItem(Graphics g, Rectangle boardRect)
+        {
+            if (_state?.PowerUpItemPosition == null) return;
+
+            Point pos = _state.PowerUpItemPosition.Value;
+            float cw = boardRect.Width / (float)_state.BoardWidth;
+            float ch = boardRect.Height / (float)_state.BoardHeight;
+
+            var center = new PointF(
+                boardRect.Left + pos.X * cw + cw / 2f,
+                boardRect.Top + pos.Y * ch + ch / 2f);
+
+            float size = Math.Min(cw, ch) * 0.8f;
+            float pulse = (float)(Math.Sin(_time * 10) * 0.1 + 1.0); // Schnelles Pulsieren
+
+            Color color = _state.ItemOnBoard switch
+            {
+                GameState.PowerUpType.Magnet => Color.Cyan,
+                GameState.PowerUpType.Ghost => Color.LightBlue,
+                GameState.PowerUpType.DoubleScore => Color.Magenta,
+                _ => Color.White
+            };
+
+            // Symbol zeichnen
+            using (var brush = new SolidBrush(color))
+            {
+                // Diamant-Form für PowerUps
+                var path = new GraphicsPath();
+                path.AddPolygon(new PointF[] {
+                    new PointF(center.X, center.Y - size/2 * pulse),
+                    new PointF(center.X + size/2 * pulse, center.Y),
+                    new PointF(center.X, center.Y + size/2 * pulse),
+                    new PointF(center.X - size/2 * pulse, center.Y)
+                });
+                g.FillPath(brush, path);
+                g.DrawPath(Pens.White, path);
+            }
+
+            // Buchstaben-Icon
+            string icon = _state.ItemOnBoard switch
+            {
+                GameState.PowerUpType.Magnet => "M",
+                GameState.PowerUpType.Ghost => "G",
+                GameState.PowerUpType.DoubleScore => "2x",
+                _ => "?"
+            };
+
+            using (var font = new Font("Arial", size / 2, FontStyle.Bold))
+            using (var textBrush = new SolidBrush(Color.Black))
+            {
+                var textSize = g.MeasureString(icon, font);
+                g.DrawString(icon, font, textBrush,
+                    center.X - textSize.Width / 2,
+                    center.Y - textSize.Height / 2);
+            }
+        }
+
+        // --- NEU: Power-Up Anzeige im HUD ---
+        private void DrawPowerUpHUD(Graphics g, Rectangle boardRect, GameState state)
+        {
+            if (state.CurrentPowerUp != GameState.PowerUpType.None)
+            {
+                string puText = $"{state.CurrentPowerUp} ({(state.PowerUpDuration / 10)}s)";
+                using (var font = new Font("Segoe UI", 12, FontStyle.Bold))
+                using (var brush = new SolidBrush(Color.Yellow))
+                {
+                    // Position rechts neben dem Score
+                    g.DrawString(puText, font, brush, boardRect.Right - 150, boardRect.Top - 40);
+                }
+            }
+        }
+
+        // --- NEU: Initialisierung der CRT Ressourcen ---
+        private void InitCRTResources()
+        {
+            if (_resourcesInitialized) return;
+
+            // 1. Scanlines (Horizontale Streifen)
+            var bmp = new Bitmap(1, 4); // Muster wiederholt sich alle 4 Pixel
+            using (var g = Graphics.FromImage(bmp))
+            {
+                g.Clear(Color.FromArgb(0, 0, 0, 0));
+                // Eine halb-transparente schwarze Linie
+                using (var pen = new Pen(Color.FromArgb(40, 0, 0, 0), 1))
+                {
+                    g.DrawLine(pen, 0, 0, 1, 0);
+                }
+            }
+            _scanlineBrush = new TextureBrush(bmp);
+
+            UpdateVignetteBrush();
+            _resourcesInitialized = true;
+        }
+
+        private void UpdateVignetteBrush()
+        {
+            if (Width == 0 || Height == 0) return;
+
+            // 2. Vignette (Dunkle Ecken)
+            using (var path = new GraphicsPath())
+            {
+                path.AddEllipse(-50, -50, Width + 100, Height + 100);
+                _vignetteBrush = new PathGradientBrush(path);
+                _vignetteBrush.CenterColor = Color.Transparent;
+                _vignetteBrush.SurroundColors = new Color[] { Color.FromArgb(220, 0, 0, 0) };
+            }
+        }
+
+        private void GameView_Resize(object sender, EventArgs e)
+        {
+            UpdateVignetteBrush();
+        }
+
+        // --- NEU: Methode um Shake auszulösen (kann vom Controller gerufen werden) ---
+        public void TriggerShake(float intensity)
+        {
+            _shakeIntensity = intensity;
         }
 
         private void GameView_MouseMove(object sender, MouseEventArgs e)
@@ -178,7 +308,7 @@ namespace Snake.Views
             int buttonWidth = 300;
             int buttonHeight = 50;
             int buttonSpacing = 20;
-            
+
             // Berechne startY basierend auf der Position der Top-Highscores
             float highscoresY = Height * 0.15f + 120 + (_isNewHighScore ? 50 : 30);
             int startY = (int)(highscoresY + 80);
@@ -211,7 +341,7 @@ namespace Snake.Views
             int buttonWidth = 300;
             int buttonHeight = 50;
             int buttonSpacing = 20;
-            
+
             // Berechne startY basierend auf der Position der Top-Highscores
             float highscoresY = Height * 0.15f + 120 + (_isNewHighScore ? 50 : 30);
             int startY = (int)(highscoresY + 80);
@@ -295,6 +425,7 @@ namespace Snake.Views
         {
             base.OnHandleCreated(e);
             _animTimer.Start();
+            InitCRTResources(); // Ressourcen laden wenn Handle da ist
             Focus();
         }
 
@@ -334,6 +465,7 @@ namespace Snake.Views
                 var newCount = SafeSnakeCount(state);
                 if (newCount > _lastSnakeCount)
                 {
+                    // SCHLANGE HAT GEFRESSEN
                     _justGrew = true;
                     _growAnimationCounter = 10;
 
@@ -343,12 +475,18 @@ namespace Snake.Views
 
                     SpawnGrowthWave();
                     SpawnFoodBurst(_lastFoodPos);
+                    TriggerShake(5.0f); // Leichter Shake beim Essen
                 }
             }
 
             _state = state;
             _lastSnakeCount = SafeSnakeCount(state);
             _lastFoodPos = state.FoodPosition;
+
+            if (state != null && state.GameOver)
+            {
+                TriggerShake(15.0f); // Starker Shake bei Game Over
+            }
 
             Invalidate();
             UpdateViewRequested?.Invoke();
@@ -514,6 +652,13 @@ namespace Snake.Views
 
             _pulsePhase = (float)(_time * 1.5);
 
+            // Update Shake
+            if (_shakeIntensity > 0)
+            {
+                _shakeIntensity *= 0.9f; // Shake klingt exponentiell ab
+                if (_shakeIntensity < 0.5f) _shakeIntensity = 0f;
+            }
+
             if (_growAnimationCounter > 0)
             {
                 _growAnimationCounter--;
@@ -606,41 +751,92 @@ namespace Snake.Views
 
         protected override void OnPaint(PaintEventArgs e)
         {
-            base.OnPaint(e);
+            // Wichtig: Kein base.OnPaint(e) um Flackern zu vermeiden, wir zeichnen alles selbst.
             var g = e.Graphics;
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.ClearTypeGridFit;
 
+            // 1. SCREEN SHAKE ANWENDEN
+            // Wir verschieben den gesamten Koordinatenursprung zufällig
+            if (_shakeIntensity > 0)
+            {
+                float dx = (float)(_rng.NextDouble() * _shakeIntensity * 2 - _shakeIntensity);
+                float dy = (float)(_rng.NextDouble() * _shakeIntensity * 2 - _shakeIntensity);
+                g.TranslateTransform(dx, dy);
+            }
+
+            // 2. Standard Zeichnen
             DrawAnimatedBackground(g);
             DrawStarField(g);
 
             if (_showMainMenu)
             {
                 DrawMainMenu(g);
+                DrawCRTOverlay(g); // Overlay auch im Menü
                 return;
             }
 
             if (_state == null)
             {
                 DrawStartScreen(g);
+                DrawCRTOverlay(g);
                 return;
             }
 
+            // 3. SPIEL ZEICHNEN
             var boardRect = GetBoardRect();
 
+            // Grid & Board
             DrawEnhancedGrid(g, boardRect, _state.BoardWidth, _state.BoardHeight);
             DrawBoardPlate(g, boardRect);
 
+            // Game Elements
             DrawSnakeBody(g, boardRect, _state);
             DrawGrowthWaves(g, boardRect);
-
             DrawFood(g, boardRect, _state);
+            DrawPowerUpItem(g, boardRect); // <- POWER-UPS ZEICHNEN
             DrawParticles(g, boardRect);
             DrawUserFriendlyHUD(g, boardRect, _state);
+            DrawPowerUpHUD(g, boardRect, _state); // <- POWER-UP HUD ANZEIGE
 
             if (_showGameOverMenu)
             {
                 DrawGameOverMenu(g);
+            }
+
+            // 3. RETRO OVERLAY (Ganz am Ende zeichnen)
+            g.ResetTransform(); // Shake für das Overlay entfernen (Overlay wackelt nicht mit)
+            DrawCRTOverlay(g);
+        }
+
+        // --- NEU: Die CRT Zeichen-Methoden ---
+        private void DrawCRTOverlay(Graphics g)
+        {
+            if (!_resourcesInitialized) InitCRTResources();
+
+            // 1. Scanlines (optional - kannst du behalten)
+            g.FillRectangle(_scanlineBrush, ClientRectangle);
+
+            // 2. RGB Split (optional)
+            using (var redPen = new Pen(Color.FromArgb(40, 255, 0, 0), 2))
+            using (var bluePen = new Pen(Color.FromArgb(40, 0, 0, 255), 2))
+            {
+                g.DrawLine(redPen, 0, 0, 0, Height);
+                g.DrawLine(bluePen, Width - 2, 0, Width - 2, Height);
+            }
+
+            // 3. VIGNETTE AUSKOMMENTIERT - der komische dunkle Kreis in der Mitte verschwindet!
+            // if (_vignetteBrush != null)
+            // {
+            //     g.FillRectangle(_vignetteBrush, ClientRectangle);
+            // }
+
+            // 4. Monitor-Glanz (optional)
+            using (var glossBrush = new LinearGradientBrush(
+                new Point(0, 0), new Point(200, 200),
+                Color.FromArgb(30, 255, 255, 255), Color.Transparent))
+            {
+                g.FillEllipse(glossBrush, -50, -50, 300, 200);
             }
         }
 
@@ -978,6 +1174,21 @@ namespace Snake.Views
             float segmentThickness = Math.Min(cw, ch) * 0.88f;
             Color bodyColor = AccentWarm;
 
+            // --- NEU: GHOST POWER-UP VISUAL EFFECT ---
+            if (state.CurrentPowerUp == GameState.PowerUpType.Ghost)
+            {
+                bodyColor = Color.FromArgb(200, 220, 255); // Hellblau-transparent
+                // Flackern kurz vor Ende
+                if (state.PowerUpDuration < 30 && (_time * 10) % 2 > 1)
+                    bodyColor = AccentWarm;
+            }
+
+            // --- NEU: MAGNET POWER-UP VISUAL EFFECT ---
+            if (state.CurrentPowerUp == GameState.PowerUpType.Magnet)
+            {
+                bodyColor = Color.Cyan;
+            }
+
             for (int i = 1; i < pts.Count; i++)
             {
                 if (i == pts.Count - 1) continue;
@@ -1146,6 +1357,20 @@ namespace Snake.Views
 
             Color headStartColor = AccentWarm;
             Color headEndColor = Accent;
+
+            // --- NEU: GHOST POWER-UP HEAD EFFECT ---
+            if (_state?.CurrentPowerUp == GameState.PowerUpType.Ghost)
+            {
+                headStartColor = Color.FromArgb(200, 220, 255);
+                headEndColor = Color.FromArgb(180, 200, 255);
+            }
+
+            // --- NEU: MAGNET POWER-UP HEAD EFFECT ---
+            if (_state?.CurrentPowerUp == GameState.PowerUpType.Magnet)
+            {
+                headStartColor = Color.Cyan;
+                headEndColor = Color.LightBlue;
+            }
 
             for (int i = 3; i >= 0; i--)
             {
@@ -1756,6 +1981,8 @@ namespace Snake.Views
                 _animTimer?.Dispose();
                 _startBackgroundImage?.Dispose();
                 _mainMenuBackgroundImage?.Dispose();
+                _scanlineBrush?.Dispose();
+                _vignetteBrush?.Dispose();
             }
             base.Dispose(disposing);
         }

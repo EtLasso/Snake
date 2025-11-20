@@ -14,6 +14,9 @@ namespace Snake.Models
         public enum GameMode { Classic, TimeAttack, Survival }
         public enum EndGameOption { NewGame, MainMenu, HighScores, Exit }
 
+        // NEUE POWER-UP ENUMS
+        public enum PowerUpType { None, Magnet, Ghost, DoubleScore }
+
         // Events für UI-Updates
         public event Action<int> OnScoreChanged;
         public event Action<bool> OnGameOverChanged;
@@ -48,6 +51,12 @@ namespace Snake.Models
         public GameMode CurrentGameMode { get; set; }
         public bool IsPaused { get; private set; }
 
+        // NEUE POWER-UP PROPERTIES
+        public PowerUpType CurrentPowerUp { get; private set; } = PowerUpType.None;
+        public int PowerUpDuration { get; private set; } = 0;
+        public Point? PowerUpItemPosition { get; private set; } = null;
+        public PowerUpType ItemOnBoard { get; private set; } = PowerUpType.None;
+
         // Highscore System
         public List<HighScoreEntry> HighScores { get; private set; }
         private const string HIGHSCORE_FILE = "highscores.json";
@@ -60,6 +69,7 @@ namespace Snake.Models
         private int _invincibilityTimer;
         private int _consecutiveFoods;
         private TimeSpan _timeLimit;
+        private int _powerUpSpawnTimer = 0;
 
         // Highscore Entry Klasse
         public class HighScoreEntry
@@ -148,6 +158,13 @@ namespace Snake.Models
             _consecutiveFoods = 0;
             IsPaused = false;
 
+            // POWER-UP RESET
+            CurrentPowerUp = PowerUpType.None;
+            PowerUpDuration = 0;
+            PowerUpItemPosition = null;
+            ItemOnBoard = PowerUpType.None;
+            _powerUpSpawnTimer = 0;
+
             // Zeitlimit basierend auf Spielmodus setzen
             _timeLimit = CurrentGameMode switch
             {
@@ -184,6 +201,7 @@ namespace Snake.Models
             if (GameOver || IsPaused) return;
 
             UpdateGameTime();
+            UpdatePowerUpLogic(); // <--- NEU: PowerUps verwalten
 
             // Zeitlimit prüfen
             if (CurrentGameMode == GameMode.TimeAttack && GameTime >= _timeLimit)
@@ -199,8 +217,13 @@ namespace Snake.Models
             var head = Snake[0];
             var newHead = CalculateNewHeadPosition(head);
 
-            // Kollisionsprüfung
-            if (CheckWallCollision(newHead) && !IsInvincible)
+            // --- NEU: GHOST MODUS (Durch Wände gehen) ---
+            if (CurrentPowerUp == PowerUpType.Ghost)
+            {
+                // Wrap Around (Teleport zur anderen Seite)
+                newHead = HandleWallWrap(newHead);
+            }
+            else if (CheckWallCollision(newHead) && !IsInvincible)
             {
                 // Für Survival-Modus: Durch Wände gehen
                 if (CurrentGameMode == GameMode.Survival)
@@ -214,10 +237,20 @@ namespace Snake.Models
                 }
             }
 
-            if (CheckSelfCollision(newHead) && !IsInvincible)
+            // Selbstkollision prüfen (außer im Ghost Modus)
+            if (CurrentPowerUp != PowerUpType.Ghost && CheckSelfCollision(newHead) && !IsInvincible)
             {
                 EndGame();
                 return;
+            }
+
+            // --- NEU: Power-Up einsammeln? ---
+            if (PowerUpItemPosition.HasValue && newHead == PowerUpItemPosition.Value)
+            {
+                ActivatePowerUp(ItemOnBoard);
+                PowerUpItemPosition = null;
+                ItemOnBoard = PowerUpType.None;
+                OnGameMessage?.Invoke($"POWERUP: {CurrentPowerUp}!");
             }
 
             // Füge neuen Kopf hinzu
@@ -243,6 +276,87 @@ namespace Snake.Models
             UpdateFoodTimer();
 
             OnSnakeMoved?.Invoke();
+        }
+
+        // NEUE POWER-UP METHODEN
+        private void UpdatePowerUpLogic()
+        {
+            // 1. Aktiven Effekt runterzählen
+            if (CurrentPowerUp != PowerUpType.None)
+            {
+                PowerUpDuration--;
+
+                // MAGNET LOGIK: Zieht Futter zur Schlange
+                if (CurrentPowerUp == PowerUpType.Magnet && PowerUpDuration % 2 == 0) // Nur jeden 2. Frame bewegen
+                {
+                    MoveFoodTowardsSnake();
+                }
+
+                if (PowerUpDuration <= 0)
+                {
+                    CurrentPowerUp = PowerUpType.None;
+                    OnGameMessage?.Invoke("PowerUp ended.");
+                }
+            }
+
+            // 2. Neues PowerUp spawnen (Zufall)
+            if (PowerUpItemPosition == null)
+            {
+                _powerUpSpawnTimer++;
+                // Alle ~10 Sekunden (bei 100ms Speed) Chance auf PowerUp
+                if (_powerUpSpawnTimer > 100)
+                {
+                    _powerUpSpawnTimer = 0;
+                    if (_random.NextDouble() < 0.3) // 30% Chance
+                    {
+                        SpawnPowerUp();
+                    }
+                }
+            }
+        }
+
+        private void SpawnPowerUp()
+        {
+            var free = GetFreePositions();
+            if (free.Count > 0)
+            {
+                PowerUpItemPosition = free[_random.Next(free.Count)];
+                // Zufälliger Typ (1 bis 3)
+                ItemOnBoard = (PowerUpType)_random.Next(1, 4);
+            }
+        }
+
+        private void ActivatePowerUp(PowerUpType type)
+        {
+            CurrentPowerUp = type;
+            // Dauer abhängig vom Typ (in Ticks)
+            PowerUpDuration = type == PowerUpType.Ghost ? 100 : 150;
+        }
+
+        private void MoveFoodTowardsSnake()
+        {
+            // Simpler Algorithmus: Futter bewegt sich einen Schritt auf den Kopf zu
+            var head = Snake[0];
+            int dx = Math.Sign(head.X - FoodPosition.X);
+            int dy = Math.Sign(head.Y - FoodPosition.Y);
+
+            // Versuche X Bewegung
+            Point newFoodPos = new Point(FoodPosition.X + dx, FoodPosition.Y);
+
+            // Wenn blockiert oder schon auf gleicher X-Höhe, versuche Y
+            if (dx == 0 || _snakePositions.Contains(newFoodPos))
+            {
+                newFoodPos = new Point(FoodPosition.X, FoodPosition.Y + dy);
+            }
+
+            // Nur bewegen, wenn Position frei ist
+            if (!_snakePositions.Contains(newFoodPos) &&
+                newFoodPos.X >= 0 && newFoodPos.X < BoardWidth &&
+                newFoodPos.Y >= 0 && newFoodPos.Y < BoardHeight)
+            {
+                FoodPosition = newFoodPos;
+                OnFoodPlaced?.Invoke(FoodPosition); // View updaten
+            }
         }
 
         private Point HandleWallWrap(Point position)
@@ -533,6 +647,12 @@ namespace Snake.Models
                 points = (int)(points * 1.3f);
             }
 
+            // NEU: DOUBLE SCORE POWER-UP
+            if (CurrentPowerUp == PowerUpType.DoubleScore)
+            {
+                points *= 2;
+            }
+
             return points;
         }
 
@@ -618,8 +738,6 @@ namespace Snake.Models
             SaveHighScores();
         }
 
-        // Die ShowHighScores Methode wurde entfernt - verwende stattdessen das Event
-
         // Power-Up Methoden
         public void ActivateInvincibility(int duration)
         {
@@ -640,6 +758,11 @@ namespace Snake.Models
             public TimeSpan GameTime { get; set; }
             public Difficulty CurrentDifficulty { get; set; }
             public GameMode CurrentGameMode { get; set; }
+            // NEUE POWER-UP SAVE DATA
+            public PowerUpType CurrentPowerUp { get; set; }
+            public int PowerUpDuration { get; set; }
+            public Point? PowerUpItemPosition { get; set; }
+            public PowerUpType ItemOnBoard { get; set; }
         }
 
         public GameSaveData SaveGame()
@@ -654,7 +777,12 @@ namespace Snake.Models
                 FoodsEaten = this.FoodsEaten,
                 GameTime = this.GameTime,
                 CurrentDifficulty = this.CurrentDifficulty,
-                CurrentGameMode = this.CurrentGameMode
+                CurrentGameMode = this.CurrentGameMode,
+                // NEUE POWER-UP SAVE DATA
+                CurrentPowerUp = this.CurrentPowerUp,
+                PowerUpDuration = this.PowerUpDuration,
+                PowerUpItemPosition = this.PowerUpItemPosition,
+                ItemOnBoard = this.ItemOnBoard
             };
         }
 
@@ -670,6 +798,12 @@ namespace Snake.Models
             this.GameTime = saveData.GameTime;
             this.CurrentDifficulty = saveData.CurrentDifficulty;
             this.CurrentGameMode = saveData.CurrentGameMode;
+
+            // NEUE POWER-UP LOAD DATA
+            this.CurrentPowerUp = saveData.CurrentPowerUp;
+            this.PowerUpDuration = saveData.PowerUpDuration;
+            this.PowerUpItemPosition = saveData.PowerUpItemPosition;
+            this.ItemOnBoard = saveData.ItemOnBoard;
 
             // Snake Positions HashSet aktualisieren
             _snakePositions.Clear();
