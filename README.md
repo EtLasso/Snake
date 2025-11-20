@@ -5,7 +5,14 @@ Prerequisites
 
     Windows operating system
 
-Steps
+Download the contents of the publish folder directly, which contains everything needed to run the game without building it yourself.
+
+
+    Download all files from the publish folder together to the same directory on your PC.
+
+    Double-click [Snake.exe] to launch the Snake game window and start playing immediately.
+
+Steps with Visual Studio
 
     Clone the repository
 
