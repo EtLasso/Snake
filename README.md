@@ -1,5 +1,4 @@
-How to Start Snake v0.8
-Prerequisites
+How to Start Snake
 
     Visual Studio installed
 
