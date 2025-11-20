@@ -1,7 +1,8 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Text;
 using System.Linq;
 using System.Windows.Forms;
 using Snake.Models;
@@ -18,6 +19,16 @@ namespace Snake.Views
         private readonly List<Particle> _particles = new List<Particle>();
         private readonly List<StarField> _stars = new List<StarField>();
         private readonly List<GrowthWave> _growthWaves = new List<GrowthWave>();
+
+        // Startbild
+        private Image _startBackgroundImage;
+        private bool _startBackgroundLoaded = false;
+
+        // Hauptmenü Hintergrundbild
+        private Image _mainMenuBackgroundImage;
+        private bool _mainMenuBackgroundLoaded = false;
+        private bool _showMainMenu = false;
+        private int _mainMenuIndex = 0;
 
         private int _lastSnakeCount = 0;
         private Point _lastFoodPos;
@@ -46,15 +57,21 @@ namespace Snake.Views
 
         private float _pulsePhase = 0f;
 
-        // Game Over Menu Fields
+        // Game Over Menu Fields - ERWEITERT
         private bool _showGameOverMenu = false;
         private int _gameOverScore = 0;
         private int _gameOverMenuIndex = 0;
+        private List<GameState.HighScoreEntry> _topHighScores = new List<GameState.HighScoreEntry>();
+        private bool _isNewHighScore = false;
 
+        // EVENTS FÜR CONTROLLER - ERWEITERT
         public event KeyEventHandler KeyPressed;
         public event Action UpdateViewRequested;
         public event Action RestartRequested;
         public event Action ExitRequested;
+        public event Action MainMenuRequested;
+        public event Action HighScoresRequested;
+        public event Action StartGameRequested;
 
         public GameView()
         {
@@ -67,13 +84,196 @@ namespace Snake.Views
             _animTimer = new System.Windows.Forms.Timer { Interval = 16 };
             _animTimer.Tick += AnimTimer_Tick;
 
+            // Maus-Events registrieren
+            this.MouseClick += GameView_MouseClick;
+            this.MouseMove += GameView_MouseMove;
+            this.Cursor = Cursors.Default;
+
             InitializeStarField();
+            LoadStartBackground();
+            LoadMainMenuBackground();
+        }
+
+        private void GameView_MouseMove(object sender, MouseEventArgs e)
+        {
+            if (_showMainMenu)
+            {
+                HandleMainMenuMouseMove(e.Location);
+            }
+            else if (_showGameOverMenu)
+            {
+                HandleGameOverMouseMove(e.Location);
+            }
+        }
+
+        private void GameView_MouseClick(object sender, MouseEventArgs e)
+        {
+            if (_showMainMenu)
+            {
+                HandleMainMenuMouseClick(e.Location);
+            }
+            else if (_showGameOverMenu)
+            {
+                HandleGameOverMouseClick(e.Location);
+            }
+        }
+
+        private void HandleMainMenuMouseMove(Point mousePos)
+        {
+            int buttonWidth = 350;
+            int buttonHeight = 60;
+            int buttonSpacing = 20;
+            int startY = Height / 2 - 80;
+
+            for (int i = 0; i < 4; i++)
+            {
+                var buttonRect = new Rectangle(
+                    Width / 2 - buttonWidth / 2,
+                    startY + i * (buttonHeight + buttonSpacing),
+                    buttonWidth,
+                    buttonHeight
+                );
+
+                if (buttonRect.Contains(mousePos))
+                {
+                    if (_mainMenuIndex != i)
+                    {
+                        _mainMenuIndex = i;
+                        this.Cursor = Cursors.Hand;
+                        Invalidate();
+                    }
+                    return;
+                }
+            }
+            this.Cursor = Cursors.Default;
+        }
+
+        private void HandleMainMenuMouseClick(Point mousePos)
+        {
+            int buttonWidth = 350;
+            int buttonHeight = 60;
+            int buttonSpacing = 20;
+            int startY = Height / 2 - 80;
+
+            for (int i = 0; i < 4; i++)
+            {
+                var buttonRect = new Rectangle(
+                    Width / 2 - buttonWidth / 2,
+                    startY + i * (buttonHeight + buttonSpacing),
+                    buttonWidth,
+                    buttonHeight
+                );
+
+                if (buttonRect.Contains(mousePos))
+                {
+                    _mainMenuIndex = i;
+                    ExecuteSelectedMainMenuOption();
+                    return;
+                }
+            }
+        }
+
+        private void HandleGameOverMouseMove(Point mousePos)
+        {
+            int buttonWidth = 300;
+            int buttonHeight = 50;
+            int buttonSpacing = 20;
+            
+            // Berechne startY basierend auf der Position der Top-Highscores
+            float highscoresY = Height * 0.15f + 120 + (_isNewHighScore ? 50 : 30);
+            int startY = (int)(highscoresY + 80);
+
+            for (int i = 0; i < 4; i++)
+            {
+                var buttonRect = new Rectangle(
+                    Width / 2 - buttonWidth / 2,
+                    startY + i * (buttonHeight + buttonSpacing),
+                    buttonWidth,
+                    buttonHeight
+                );
+
+                if (buttonRect.Contains(mousePos))
+                {
+                    if (_gameOverMenuIndex != i)
+                    {
+                        _gameOverMenuIndex = i;
+                        this.Cursor = Cursors.Hand;
+                        Invalidate();
+                    }
+                    return;
+                }
+            }
+            this.Cursor = Cursors.Default;
+        }
+
+        private void HandleGameOverMouseClick(Point mousePos)
+        {
+            int buttonWidth = 300;
+            int buttonHeight = 50;
+            int buttonSpacing = 20;
+            
+            // Berechne startY basierend auf der Position der Top-Highscores
+            float highscoresY = Height * 0.15f + 120 + (_isNewHighScore ? 50 : 30);
+            int startY = (int)(highscoresY + 80);
+
+            for (int i = 0; i < 4; i++)
+            {
+                var buttonRect = new Rectangle(
+                    Width / 2 - buttonWidth / 2,
+                    startY + i * (buttonHeight + buttonSpacing),
+                    buttonWidth,
+                    buttonHeight
+                );
+
+                if (buttonRect.Contains(mousePos))
+                {
+                    _gameOverMenuIndex = i;
+                    ExecuteSelectedMenuOption();
+                    return;
+                }
+            }
+        }
+
+        private void LoadStartBackground()
+        {
+            try
+            {
+                string imagePath = @"C:\Users\Administrator\source\repos\EtLasso\Snake\bin\Debug\net8.0-windows\snake.png";
+                if (System.IO.File.Exists(imagePath))
+                {
+                    _startBackgroundImage = Image.FromFile(imagePath);
+                    _startBackgroundLoaded = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _startBackgroundLoaded = false;
+                Console.WriteLine($"Fehler beim Laden des Startbildes: {ex.Message}");
+            }
+        }
+
+        private void LoadMainMenuBackground()
+        {
+            try
+            {
+                string imagePath = @"C:\Users\Administrator\source\repos\EtLasso\Snake\bin\Debug\net8.0-windows\snake.png";
+                if (System.IO.File.Exists(imagePath))
+                {
+                    _mainMenuBackgroundImage = Image.FromFile(imagePath);
+                    _mainMenuBackgroundLoaded = true;
+                }
+            }
+            catch (Exception ex)
+            {
+                _mainMenuBackgroundLoaded = false;
+                Console.WriteLine($"Fehler beim Laden des Hauptmenü-Hintergrundes: {ex.Message}");
+            }
         }
 
         private void InitializeStarField()
         {
             var rand = new Random();
-            for (int i = 0; i < 50; i++) // More stars!
+            for (int i = 0; i < 50; i++)
             {
                 _stars.Add(new StarField
                 {
@@ -107,7 +307,19 @@ namespace Snake.Views
         protected override void OnKeyDown(KeyEventArgs e)
         {
             base.OnKeyDown(e);
-            KeyPressed?.Invoke(this, e);
+
+            if (_showMainMenu)
+            {
+                HandleMainMenuInput(e.KeyCode);
+            }
+            else if (_showGameOverMenu)
+            {
+                HandleGameOverInput(e.KeyCode);
+            }
+            else
+            {
+                KeyPressed?.Invoke(this, e);
+            }
         }
 
         public void UpdateView(GameState state)
@@ -142,9 +354,77 @@ namespace Snake.Views
             UpdateViewRequested?.Invoke();
         }
 
-        public void ShowGameOverMenu(int score)
+        public void ShowMainMenu()
+        {
+            _showMainMenu = true;
+            _showGameOverMenu = false;
+            _state = null;
+            _mainMenuIndex = 0;
+            if (this.IsHandleCreated)
+            {
+                this.Focus();
+            }
+            Invalidate();
+        }
+
+        public void HideMainMenu()
+        {
+            _showMainMenu = false;
+            Invalidate();
+        }
+
+        private void HandleMainMenuInput(Keys key)
+        {
+            if (!_showMainMenu) return;
+
+            switch (key)
+            {
+                case Keys.Enter:
+                    ExecuteSelectedMainMenuOption();
+                    break;
+
+                case Keys.Escape:
+                    ExitRequested?.Invoke();
+                    break;
+
+                case Keys.Up:
+                case Keys.W:
+                    _mainMenuIndex = Math.Max(0, _mainMenuIndex - 1);
+                    Invalidate();
+                    break;
+
+                case Keys.Down:
+                case Keys.S:
+                    _mainMenuIndex = Math.Min(3, _mainMenuIndex + 1);
+                    Invalidate();
+                    break;
+            }
+        }
+
+        private void ExecuteSelectedMainMenuOption()
+        {
+            switch (_mainMenuIndex)
+            {
+                case 0:
+                    StartGameRequested?.Invoke();
+                    _showMainMenu = false;
+                    break;
+                case 1:
+                    HighScoresRequested?.Invoke();
+                    break;
+                case 2:
+                    break;
+                case 3:
+                    ExitRequested?.Invoke();
+                    break;
+            }
+        }
+
+        public void ShowGameOverMenu(int score, int speed, int snakeLength, List<GameState.HighScoreEntry> topScores, bool isNewHighScore)
         {
             _gameOverScore = score;
+            _topHighScores = topScores ?? new List<GameState.HighScoreEntry>();
+            _isNewHighScore = isNewHighScore;
             _showGameOverMenu = true;
             _gameOverMenuIndex = 0;
             if (this.IsHandleCreated)
@@ -152,6 +432,12 @@ namespace Snake.Views
                 this.Focus();
             }
             Invalidate();
+        }
+
+        public void ShowHighScores(List<GameState.HighScoreEntry> highScores = null)
+        {
+            // Diese Methode wird vom Controller aufgerufen, um die Highscore-Form anzuzeigen
+            // Das Event wird NICHT hier ausgelöst, sondern vom Controller behandelt
         }
 
         public void HideGameOverMenu()
@@ -166,14 +452,11 @@ namespace Snake.Views
 
             switch (key)
             {
-                case Keys.R:
                 case Keys.Enter:
-                    RestartRequested?.Invoke();
-                    _showGameOverMenu = false;
+                    ExecuteSelectedMenuOption();
                     break;
 
                 case Keys.Escape:
-                case Keys.Q:
                     ExitRequested?.Invoke();
                     break;
 
@@ -182,10 +465,44 @@ namespace Snake.Views
                     _gameOverMenuIndex = Math.Max(0, _gameOverMenuIndex - 1);
                     Invalidate();
                     break;
+
                 case Keys.Down:
                 case Keys.S:
-                    _gameOverMenuIndex = _gameOverMenuIndex + 1;
+                    _gameOverMenuIndex = Math.Min(3, _gameOverMenuIndex + 1);
                     Invalidate();
+                    break;
+
+                case Keys.R:
+                    RestartRequested?.Invoke();
+                    _showGameOverMenu = false;
+                    break;
+
+                case Keys.H:
+                    HighScoresRequested?.Invoke();
+                    break;
+
+                case Keys.M:
+                    MainMenuRequested?.Invoke();
+                    break;
+            }
+        }
+
+        private void ExecuteSelectedMenuOption()
+        {
+            switch (_gameOverMenuIndex)
+            {
+                case 0:
+                    RestartRequested?.Invoke();
+                    _showGameOverMenu = false;
+                    break;
+                case 1:
+                    HighScoresRequested?.Invoke();
+                    break;
+                case 2:
+                    MainMenuRequested?.Invoke();
+                    break;
+                case 3:
+                    ExitRequested?.Invoke();
                     break;
             }
         }
@@ -279,11 +596,10 @@ namespace Snake.Views
                 var star = _stars[i];
                 star.Y += star.Speed * (float)dt * 0.03f;
                 if (star.Y > 1.0f) star.Y = 0f;
-                
-                // Twinkle effect
+
                 star.Brightness += (float)(Math.Sin(_time * 5 + i) * 0.01);
                 star.Brightness = Math.Max(0.3f, Math.Min(0.9f, star.Brightness));
-                
+
                 _stars[i] = star;
             }
         }
@@ -298,9 +614,15 @@ namespace Snake.Views
             DrawAnimatedBackground(g);
             DrawStarField(g);
 
+            if (_showMainMenu)
+            {
+                DrawMainMenu(g);
+                return;
+            }
+
             if (_state == null)
             {
-                DrawEmpty(g);
+                DrawStartScreen(g);
                 return;
             }
 
@@ -314,7 +636,7 @@ namespace Snake.Views
 
             DrawFood(g, boardRect, _state);
             DrawParticles(g, boardRect);
-            DrawEnhancedHUD(g, boardRect, _state);
+            DrawUserFriendlyHUD(g, boardRect, _state);
 
             if (_showGameOverMenu)
             {
@@ -322,18 +644,206 @@ namespace Snake.Views
             }
         }
 
+        private void DrawMainMenu(Graphics g)
+        {
+            if (_mainMenuBackgroundLoaded && _mainMenuBackgroundImage != null)
+            {
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.SmoothingMode = SmoothingMode.HighQuality;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                g.CompositingQuality = CompositingQuality.HighQuality;
+
+                float imageAspect = (float)_mainMenuBackgroundImage.Width / _mainMenuBackgroundImage.Height;
+                float screenAspect = (float)Width / Height;
+
+                int drawWidth, drawHeight;
+                int drawX, drawY;
+
+                if (screenAspect > imageAspect)
+                {
+                    drawWidth = Width;
+                    drawHeight = (int)(Width / imageAspect);
+                    drawX = 0;
+                    drawY = (Height - drawHeight) / 2;
+                }
+                else
+                {
+                    drawHeight = Height;
+                    drawWidth = (int)(Height * imageAspect);
+                    drawX = (Width - drawWidth) / 2;
+                    drawY = 0;
+                }
+
+                g.DrawImage(_mainMenuBackgroundImage,
+                           new Rectangle(drawX, drawY, drawWidth, drawHeight),
+                           new Rectangle(0, 0, _mainMenuBackgroundImage.Width, _mainMenuBackgroundImage.Height),
+                           GraphicsUnit.Pixel);
+
+                g.InterpolationMode = InterpolationMode.Default;
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.PixelOffsetMode = PixelOffsetMode.Default;
+                g.CompositingQuality = CompositingQuality.Default;
+            }
+            else
+            {
+                DrawAnimatedBackground(g);
+                DrawStarField(g);
+            }
+
+            using (var overlay = new SolidBrush(Color.FromArgb(120, 10, 10, 20)))
+            {
+                g.FillRectangle(overlay, 0, 0, Width, Height);
+            }
+
+            using (var titleFont = new Font("Segoe UI", 48, FontStyle.Bold))
+            using (var shadowBrush = new SolidBrush(Color.FromArgb(180, 0, 0, 0)))
+            using (var titleBrush = new LinearGradientBrush(
+                new Point(0, 0),
+                new Point(0, 80),
+                Color.FromArgb(255, 0, 255, 180),
+                Color.FromArgb(255, 255, 80, 120)))
+            {
+                string title = "SNAKE GAME";
+                var titleSize = g.MeasureString(title, titleFont);
+                float titleX = (Width - titleSize.Width) / 2f;
+                float titleY = 60f;
+
+                g.DrawString(title, titleFont, shadowBrush, titleX + 3, titleY + 3);
+                g.DrawString(title, titleFont, shadowBrush, titleX + 3, titleY + 3);
+                g.DrawString(title, titleFont, shadowBrush, titleX + 3, titleY + 3);
+
+                g.DrawString(title, titleFont, titleBrush, titleX, titleY);
+            }
+
+            int buttonWidth = 350;
+            int buttonHeight = 60;
+            int buttonSpacing = 20;
+            int startY = Height / 2 - 80;
+
+            var menuItems = new[]
+            {
+                "SPIEL STARTEN",
+                "BESTENLISTE",
+                "EINSTELLUNGEN",
+                "VERLASSEN"
+            };
+
+            for (int i = 0; i < menuItems.Length; i++)
+            {
+                var buttonRect = new Rectangle(
+                    Width / 2 - buttonWidth / 2,
+                    startY + i * (buttonHeight + buttonSpacing),
+                    buttonWidth,
+                    buttonHeight
+                );
+
+                bool isSelected = _mainMenuIndex == i;
+                Color bgColor = isSelected ? GetMainMenuButtonColor(i) : Color.FromArgb(180, 40, 45, 70);
+                Color textColor = isSelected ? Color.Black : Color.White;
+
+                using (var buttonBg = new SolidBrush(bgColor))
+                using (var buttonText = new SolidBrush(textColor))
+                using (var buttonFont = new Font("Segoe UI", 16, FontStyle.Bold))
+                {
+                    using (var path = RoundedPath(buttonRect, 12))
+                    {
+                        using (var shadowPath = RoundedPath(
+                            new Rectangle(buttonRect.X + 2, buttonRect.Y + 2, buttonRect.Width, buttonRect.Height), 12))
+                        using (var shadowBrush = new SolidBrush(Color.FromArgb(80, 0, 0, 0)))
+                        {
+                            g.FillPath(shadowBrush, shadowPath);
+                        }
+
+                        g.FillPath(buttonBg, path);
+
+                        using (var borderPen = new Pen(isSelected ? Color.White : GetMainMenuButtonColor(i), 2f))
+                        {
+                            g.DrawPath(borderPen, path);
+                        }
+                    }
+
+                    var textSize = g.MeasureString(menuItems[i], buttonFont);
+                    g.DrawString(menuItems[i], buttonFont, buttonText,
+                        buttonRect.X + (buttonRect.Width - textSize.Width) / 2,
+                        buttonRect.Y + (buttonRect.Height - textSize.Height) / 2);
+                }
+            }
+
+            using (var hintFont = new Font("Segoe UI", 12, FontStyle.Regular))
+            using (var hintBrush = new SolidBrush(Color.FromArgb(220, 255, 255, 255)))
+            using (var hintBgBrush = new SolidBrush(Color.FromArgb(120, 0, 0, 0)))
+            {
+                string hint = "Verwende ↑↓ oder W/S zum Navigieren • ENTER zum Auswählen • ESC zum Verlassen";
+                var hintSize = g.MeasureString(hint, hintFont);
+                float hintX = (Width - hintSize.Width) / 2f;
+                float hintY = Height - 60f;
+
+                g.FillRectangle(hintBgBrush, hintX - 10, hintY - 5, hintSize.Width + 20, hintSize.Height + 10);
+
+                g.DrawString(hint, hintFont, hintBrush, hintX, hintY);
+            }
+        }
+
+        private Color GetMainMenuButtonColor(int index)
+        {
+            return index switch
+            {
+                0 => Color.FromArgb(255, 100, 255, 180),
+                1 => Color.FromArgb(255, 100, 180, 255),
+                2 => Color.FromArgb(255, 255, 200, 100),
+                3 => Color.FromArgb(255, 255, 100, 100),
+                _ => Accent
+            };
+        }
+
+        private void DrawStartScreen(Graphics g)
+        {
+            if (_startBackgroundLoaded && _startBackgroundImage != null)
+            {
+                float scale = Math.Min((float)Width / _startBackgroundImage.Width, (float)Height / _startBackgroundImage.Height);
+                int scaledWidth = (int)(_startBackgroundImage.Width * scale);
+                int scaledHeight = (int)(_startBackgroundImage.Height * scale);
+                int x = (Width - scaledWidth) / 2;
+                int y = (Height - scaledHeight) / 2;
+
+                g.DrawImage(_startBackgroundImage, x, y, scaledWidth, scaledHeight);
+            }
+
+            using (var titleFont = new Font("Segoe UI", 32, FontStyle.Bold))
+            using (var shadowBrush = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
+            using (var textBrush = new SolidBrush(Color.White))
+            {
+                string title = "READY TO PLAY";
+                var titleSize = g.MeasureString(title, titleFont);
+                float titleX = (Width - titleSize.Width) / 2f;
+                float titleY = 50f;
+
+                g.DrawString(title, titleFont, shadowBrush, titleX + 3, titleY + 3);
+                g.DrawString(title, titleFont, textBrush, titleX, titleY);
+            }
+
+            using (var hintFont = new Font("Segoe UI", 16, FontStyle.Regular))
+            using (var hintBrush = new SolidBrush(Color.FromArgb(220, 255, 255, 255)))
+            {
+                string hint = "Drücke eine beliebige Taste zum Starten";
+                var hintSize = g.MeasureString(hint, hintFont);
+                float hintX = (Width - hintSize.Width) / 2f;
+                float hintY = Height - 100f;
+
+                g.DrawString(hint, hintFont, hintBrush, hintX, hintY);
+            }
+        }
+
         private void DrawAnimatedBackground(Graphics g)
         {
-            // Multi-layer animated background
             using (var bg = new LinearGradientBrush(ClientRectangle, BgTop, BgBottom, 90f))
             {
                 g.FillRectangle(bg, ClientRectangle);
             }
 
-            // Animated gradient overlay
             float wave1 = (float)Math.Sin(_time * 0.5) * 0.1f;
             float wave2 = (float)Math.Cos(_time * 0.3) * 0.1f;
-            
+
             using (var overlay = new LinearGradientBrush(
                 ClientRectangle,
                 Color.FromArgb(15, Accent),
@@ -352,13 +862,11 @@ namespace Snake.Views
                 float y = star.Y * Height;
                 int alpha = (int)(star.Brightness * 220);
 
-                // Star glow
                 using (var glowBrush = new SolidBrush(Color.FromArgb(alpha / 3, 150, 200, 255)))
                 {
                     g.FillEllipse(glowBrush, x - star.Size * 2, y - star.Size * 2, star.Size * 4, star.Size * 4);
                 }
 
-                // Star core
                 using (var brush = new SolidBrush(Color.FromArgb(alpha, 220, 240, 255)))
                 {
                     g.FillEllipse(brush, x - star.Size / 2, y - star.Size / 2, star.Size, star.Size);
@@ -366,27 +874,10 @@ namespace Snake.Views
             }
         }
 
-        private void DrawEmpty(Graphics g)
-        {
-            using (var f = new Font("Segoe UI", 24, FontStyle.Bold))
-            using (var glow = new SolidBrush(Color.FromArgb(100, Accent)))
-            using (var brush = new SolidBrush(Accent))
-            {
-                const string s = "?? READY TO PLAY";
-                var sz = g.MeasureString(s, f);
-                float x = (Width - sz.Width) / 2f;
-                float y = (Height - sz.Height) / 2f;
-                
-                // Glow effect
-                g.DrawString(s, f, glow, x + 2, y + 2);
-                g.DrawString(s, f, brush, x, y);
-            }
-        }
-
         private Rectangle GetBoardRect()
         {
             int pad = 30;
-            return new Rectangle(pad, pad + 60, Width - pad * 2, Height - pad * 2 - 60);
+            return new Rectangle(pad, pad + 80, Width - pad * 2, Height - pad * 2 - 100);
         }
 
         private void DrawEnhancedGrid(Graphics g, Rectangle r, int cols, int rows)
@@ -394,7 +885,6 @@ namespace Snake.Views
             float cw = r.Width / (float)cols;
             float ch = r.Height / (float)rows;
 
-            // Draw 3D cells with shadows and highlights
             for (int x = 0; x < cols; x++)
             {
                 for (int y = 0; y < rows; y++)
@@ -405,27 +895,23 @@ namespace Snake.Views
                         r.Top + y * ch,
                         cw, ch);
 
-                    // Cell base
                     using (var brush = new SolidBrush(baseColor))
                     {
                         g.FillRectangle(brush, cellRect);
                     }
 
-                    // 3D highlight (top-left)
                     using (var highlight = new SolidBrush(Color.FromArgb(20, 255, 255, 255)))
                     {
                         g.FillRectangle(highlight, cellRect.X, cellRect.Y, cellRect.Width, 2);
                         g.FillRectangle(highlight, cellRect.X, cellRect.Y, 2, cellRect.Height);
                     }
 
-                    // 3D shadow (bottom-right)
                     using (var shadow = new SolidBrush(Color.FromArgb(30, 0, 0, 0)))
                     {
                         g.FillRectangle(shadow, cellRect.X, cellRect.Bottom - 2, cellRect.Width, 2);
                         g.FillRectangle(shadow, cellRect.Right - 2, cellRect.Y, 2, cellRect.Height);
                     }
 
-                    // Subtle inner glow for depth
                     using (var innerGlow = new SolidBrush(Color.FromArgb(5, Accent)))
                     {
                         var innerRect = new RectangleF(
@@ -436,7 +922,6 @@ namespace Snake.Views
                 }
             }
 
-            // Grid lines with neon glow
             using (var gridPen = new Pen(Color.FromArgb(40, Accent), 1f))
             {
                 for (int x = 0; x <= cols; x++)
@@ -454,21 +939,18 @@ namespace Snake.Views
 
         private void DrawBoardPlate(Graphics g, Rectangle r)
         {
-            // Outer glow
             using (var path = RoundedPath(new Rectangle(r.X - 3, r.Y - 3, r.Width + 6, r.Height + 6), 18))
             using (var glowPen = new Pen(Color.FromArgb(80, Accent), 6f))
             {
                 g.DrawPath(glowPen, path);
             }
 
-            // Main border
             using (var path = RoundedPath(r, 15))
             using (var pen = new Pen(Accent, 3f))
             {
                 g.DrawPath(pen, path);
             }
 
-            // Inner highlight
             using (var path = RoundedPath(new Rectangle(r.X + 2, r.Y + 2, r.Width - 4, r.Height - 4), 13))
             using (var pen = new Pen(Color.FromArgb(60, 255, 255, 255), 1f))
             {
@@ -493,143 +975,138 @@ namespace Snake.Views
                 return;
             }
 
-            float maxThickness = Math.Min(cw, ch) * 0.92f;
-            float minThickness = maxThickness * 0.45f;
+            float segmentThickness = Math.Min(cw, ch) * 0.88f;
+            Color bodyColor = AccentWarm;
 
-            // Create smooth path through all points
-            using (var bodyPath = new GraphicsPath())
+            for (int i = 1; i < pts.Count; i++)
             {
-                // Build smooth bezier path
-                if (pts.Count >= 2)
+                if (i == pts.Count - 1) continue;
+
+                var p1 = pts[i];
+                var p2 = pts[i + 1];
+
+                float radius1 = (segmentThickness / 2f) * (1.0f - (i / (float)pts.Count) * 0.3f);
+                float radius2 = (segmentThickness / 2f) * (1.0f - ((i + 1) / (float)pts.Count) * 0.3f);
+                float avgRadius = (radius1 + radius2) / 2f;
+
+                using (var connectBrush = new LinearGradientBrush(p1, p2,
+                    ControlPaint.Light(bodyColor, 0.3f),
+                    ControlPaint.Dark(bodyColor, 0.1f)))
+                using (var connectPen = new Pen(connectBrush, avgRadius * 2f))
                 {
-                    bodyPath.StartFigure();
-                    
-                    for (int i = 0; i < pts.Count - 1; i++)
-                    {
-                        PointF p0 = i > 0 ? pts[i - 1] : pts[i];
-                        PointF p1 = pts[i];
-                        PointF p2 = pts[i + 1];
-                        PointF p3 = (i + 2 < pts.Count) ? pts[i + 2] : p2;
-
-                        // Create smooth control points
-                        PointF c1 = new PointF(
-                            p1.X + (p2.X - p0.X) / 6f,
-                            p1.Y + (p2.Y - p0.Y) / 6f
-                        );
-                        PointF c2 = new PointF(
-                            p2.X - (p3.X - p1.X) / 6f,
-                            p2.Y - (p3.Y - p1.Y) / 6f
-                        );
-
-                        if (i == 0)
-                            bodyPath.AddLine(p1, p1);
-                        
-                        bodyPath.AddBezier(p1, c1, c2, p2);
-                    }
-                }
-
-                // Calculate colors for gradient
-                Color startColor = AccentWarm;
-                Color endColor = Accent;
-
-                // Get bounds for gradient
-                var bounds = bodyPath.GetBounds();
-                if (bounds.Width == 0 || bounds.Height == 0)
-                {
-                    DrawSnakeHead(g, pts[0], Math.Min(cw, ch) * 0.48f);
-                    return;
-                }
-
-                float avgThickness = (maxThickness + minThickness) / 2f;
-
-                // Draw layered body with smooth gradient
-                
-                // Outer glow
-                using (var glowPen = new Pen(Color.FromArgb(30, startColor), avgThickness + 16f))
-                {
-                    glowPen.LineJoin = LineJoin.Round;
-                    glowPen.EndCap = LineCap.Round;
-                    glowPen.StartCap = LineCap.Round;
-                    g.DrawPath(glowPen, bodyPath);
-                }
-
-                // Shadow
-                var shadowMatrix = new System.Drawing.Drawing2D.Matrix();
-                shadowMatrix.Translate(2, 2);
-                using (var shadowPath = (GraphicsPath)bodyPath.Clone())
-                {
-                    shadowPath.Transform(shadowMatrix);
-                    using (var shadowPen = new Pen(Color.FromArgb(120, 0, 0, 0), avgThickness + 4f))
-                    {
-                        shadowPen.LineJoin = LineJoin.Round;
-                        shadowPen.EndCap = LineCap.Round;
-                        shadowPen.StartCap = LineCap.Round;
-                        g.DrawPath(shadowPen, shadowPath);
-                    }
-                }
-
-                // Dark base layer
-                using (var baseBrush = new LinearGradientBrush(
-                    new PointF(bounds.Left, bounds.Top),
-                    new PointF(bounds.Right, bounds.Bottom),
-                    ControlPaint.Dark(startColor, 0.35f),
-                    ControlPaint.Dark(endColor, 0.35f)))
-                using (var basePen = new Pen(baseBrush, avgThickness))
-                {
-                    basePen.LineJoin = LineJoin.Round;
-                    basePen.EndCap = LineCap.Round;
-                    basePen.StartCap = LineCap.Round;
-                    g.DrawPath(basePen, bodyPath);
-                }
-
-                // Main body with smooth gradient from warm to cool
-                using (var mainBrush = new LinearGradientBrush(
-                    new PointF(bounds.Left, bounds.Top),
-                    new PointF(bounds.Right, bounds.Bottom),
-                    ControlPaint.Light(startColor, 0.45f),
-                    ControlPaint.Light(endColor, 0.45f)))
-                using (var mainPen = new Pen(mainBrush, avgThickness * 0.9f))
-                {
-                    mainPen.LineJoin = LineJoin.Round;
-                    mainPen.EndCap = LineCap.Round;
-                    mainPen.StartCap = LineCap.Round;
-                    g.DrawPath(mainPen, bodyPath);
-                }
-
-                // Top highlight stripe
-                using (var highlightPen = new Pen(Color.FromArgb(90, 255, 255, 255), avgThickness * 0.4f))
-                {
-                    highlightPen.LineJoin = LineJoin.Round;
-                    highlightPen.EndCap = LineCap.Round;
-                    highlightPen.StartCap = LineCap.Round;
-                    g.DrawPath(highlightPen, bodyPath);
-                }
-
-                // Sharp specular highlight
-                using (var specPen = new Pen(Color.FromArgb(120, 255, 255, 255), avgThickness * 0.2f))
-                {
-                    specPen.LineJoin = LineJoin.Round;
-                    specPen.EndCap = LineCap.Round;
-                    specPen.StartCap = LineCap.Round;
-                    g.DrawPath(specPen, bodyPath);
-                }
-
-                // Subtle outline
-                using (var outlineBrush = new LinearGradientBrush(
-                    new PointF(bounds.Left, bounds.Top),
-                    new PointF(bounds.Right, bounds.Bottom),
-                    ControlPaint.Dark(startColor, 0.45f),
-                    ControlPaint.Dark(endColor, 0.45f)))
-                using (var outlinePen = new Pen(outlineBrush, 1.8f))
-                {
-                    outlinePen.LineJoin = LineJoin.Round;
-                    outlinePen.EndCap = LineCap.Round;
-                    outlinePen.StartCap = LineCap.Round;
-                    g.DrawPath(outlinePen, bodyPath);
+                    connectPen.StartCap = LineCap.Round;
+                    connectPen.EndCap = LineCap.Round;
+                    g.DrawLine(connectPen, p1, p2);
                 }
             }
 
-            // Draw head on top
+            for (int i = 1; i < pts.Count; i++)
+            {
+                var center = pts[i];
+                float radius = segmentThickness / 2f;
+                float sizeFactor = 1.0f - (i / (float)pts.Count) * 0.3f;
+                float actualRadius = radius * sizeFactor;
+
+                using (var glowBrush = new SolidBrush(Color.FromArgb(40, bodyColor)))
+                {
+                    float glowRadius = actualRadius + 8f;
+                    g.FillEllipse(glowBrush,
+                        center.X - glowRadius, center.Y - glowRadius,
+                        glowRadius * 2, glowRadius * 2);
+                }
+
+                using (var shadowBrush = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
+                {
+                    g.FillEllipse(shadowBrush,
+                        center.X - actualRadius + 2, center.Y - actualRadius + 2,
+                        actualRadius * 2, actualRadius * 2);
+                }
+
+                using (var darkBase = new SolidBrush(ControlPaint.Dark(bodyColor, 0.3f)))
+                {
+                    g.FillEllipse(darkBase,
+                        center.X - actualRadius, center.Y - actualRadius,
+                        actualRadius * 2, actualRadius * 2);
+                }
+
+                using (var bodyBrush = new LinearGradientBrush(
+                    new PointF(center.X, center.Y - actualRadius),
+                    new PointF(center.X, center.Y + actualRadius),
+                    ControlPaint.Light(bodyColor, 0.4f),
+                    ControlPaint.Dark(bodyColor, 0.1f)))
+                {
+                    float mainRadius = actualRadius * 0.95f;
+                    g.FillEllipse(bodyBrush,
+                        center.X - mainRadius, center.Y - mainRadius,
+                        mainRadius * 2, mainRadius * 2);
+                }
+
+                using (var highlightBrush = new SolidBrush(Color.FromArgb(80, 255, 255, 255)))
+                {
+                    float hlRadius = actualRadius * 0.4f;
+                    g.FillEllipse(highlightBrush,
+                        center.X - hlRadius, center.Y - actualRadius * 0.5f,
+                        hlRadius * 2, hlRadius * 1.5f);
+                }
+
+                using (var specBrush = new SolidBrush(Color.FromArgb(120, 255, 255, 255)))
+                {
+                    float specRadius = actualRadius * 0.2f;
+                    g.FillEllipse(specBrush,
+                        center.X - specRadius, center.Y - actualRadius * 0.4f,
+                        specRadius * 2, specRadius * 2);
+                }
+
+                using (var outlinePen = new Pen(ControlPaint.Dark(bodyColor, 0.5f), 1.5f))
+                {
+                    g.DrawEllipse(outlinePen,
+                        center.X - actualRadius, center.Y - actualRadius,
+                        actualRadius * 2, actualRadius * 2);
+                }
+            }
+
+            if (state.JustAte && state.FoodDigestionProgress > 0 && pts.Count > 1)
+            {
+                float progressNormalized = state.FoodDigestionProgress / 100f;
+                int targetSegment = Math.Min((int)(progressNormalized * (pts.Count - 1)), pts.Count - 1);
+
+                if (targetSegment >= 0 && targetSegment < pts.Count)
+                {
+                    var foodCenter = pts[targetSegment];
+                    float foodRadius = segmentThickness * 0.35f;
+
+                    float pulse = 1.0f + (float)Math.Sin(_time * 12) * 0.15f;
+                    float animRadius = foodRadius * pulse;
+
+                    for (int i = 3; i >= 0; i--)
+                    {
+                        float glowSize = animRadius * (1.8f + i * 0.4f);
+                        int alpha = 50 / (i + 1);
+                        using (var glowBrush = new SolidBrush(Color.FromArgb(alpha, FoodGlowColor)))
+                        {
+                            g.FillEllipse(glowBrush,
+                                foodCenter.X - glowSize, foodCenter.Y - glowSize,
+                                glowSize * 2, glowSize * 2);
+                        }
+                    }
+
+                    using (var foodBrush = new SolidBrush(FoodColor))
+                    {
+                        g.FillEllipse(foodBrush,
+                            foodCenter.X - animRadius, foodCenter.Y - animRadius,
+                            animRadius * 2, animRadius * 2);
+                    }
+
+                    using (var hlBrush = new SolidBrush(Color.FromArgb(180, 255, 255, 150)))
+                    {
+                        float hlSize = animRadius * 0.4f;
+                        g.FillEllipse(hlBrush,
+                            foodCenter.X - hlSize, foodCenter.Y - animRadius * 0.5f,
+                            hlSize * 2, hlSize * 2);
+                    }
+                }
+            }
+
             DrawSnakeHead(g, pts[0], Math.Min(cw, ch) * 0.46f);
         }
 
@@ -651,7 +1128,6 @@ namespace Snake.Views
                 else dir = new PointF(1, 0);
             }
 
-            // Match body thickness - slightly larger for the head
             float headWidth = baseRadius * 1.85f;
             float headHeight = baseRadius * 1.85f;
             float angle = (float)(Math.Atan2(dir.Y, dir.X) * 180.0 / Math.PI);
@@ -668,11 +1144,9 @@ namespace Snake.Views
                 headWidth * breathe,
                 headHeight * breathe);
 
-            // Use same colors as body - gradient from AccentWarm to Accent
             Color headStartColor = AccentWarm;
             Color headEndColor = Accent;
 
-            // Multi-layer glow (outermost)
             for (int i = 3; i >= 0; i--)
             {
                 float glowExpand = 8f + i * 4f;
@@ -688,7 +1162,6 @@ namespace Snake.Views
                 }
             }
 
-            // Shadow
             using (var shadowBrush = new SolidBrush(Color.FromArgb(140, 0, 0, 0)))
             {
                 var shadowRect = new RectangleF(
@@ -697,13 +1170,11 @@ namespace Snake.Views
                 g.FillEllipse(shadowBrush, shadowRect);
             }
 
-            // Dark base layer (for 3D depth)
             using (var darkBase = new SolidBrush(ControlPaint.Dark(headStartColor, 0.35f)))
             {
                 g.FillEllipse(darkBase, headRect);
             }
 
-            // Main head with vertical gradient matching body style
             using (var headBrush = new LinearGradientBrush(
                 new PointF(headRect.Left, headRect.Top),
                 new PointF(headRect.Left, headRect.Bottom),
@@ -716,7 +1187,6 @@ namespace Snake.Views
                 g.FillEllipse(headBrush, mainRect);
             }
 
-            // Main highlight (large, diffuse)
             using (var highlightBrush = new SolidBrush(Color.FromArgb(90, 255, 255, 255)))
             {
                 var highlightRect = new RectangleF(
@@ -727,7 +1197,6 @@ namespace Snake.Views
                 g.FillEllipse(highlightBrush, highlightRect);
             }
 
-            // Specular highlight (small, sharp)
             using (var specBrush = new SolidBrush(Color.FromArgb(140, 255, 255, 255)))
             {
                 var specRect = new RectangleF(
@@ -738,13 +1207,11 @@ namespace Snake.Views
                 g.FillEllipse(specBrush, specRect);
             }
 
-            // Subtle outline for definition
             using (var outlinePen = new Pen(ControlPaint.Dark(headStartColor, 0.45f), 2f))
             {
                 g.DrawEllipse(outlinePen, headRect);
             }
 
-            // Inner rim light (top)
             using (var rimPen = new Pen(Color.FromArgb(60, 255, 255, 255), 1.5f))
             {
                 var rimRect = new RectangleF(
@@ -753,19 +1220,16 @@ namespace Snake.Views
                 g.DrawArc(rimPen, rimRect, 180, 180);
             }
 
-            // Eyes - larger and more expressive
             float eyeOffsetX = headWidth * 0.22f;
             float eyeOffsetY = headHeight * 0.18f;
             float eyeSize = Math.Max(5f, headHeight * 0.28f);
 
-            // Eye whites with subtle shadow
             using (var eyeShadow = new SolidBrush(Color.FromArgb(40, 0, 0, 0)))
             using (var white = new SolidBrush(Color.FromArgb(250, 255, 255, 255)))
             using (var pupil = new SolidBrush(Color.FromArgb(20, 20, 30)))
             using (var gloss = new SolidBrush(Color.FromArgb(180, 255, 255, 255)))
             using (var iris = new SolidBrush(Color.FromArgb(60, 200, 255)))
             {
-                // Left eye
                 var leftEyeRect = new RectangleF(
                     center.X - eyeOffsetX - eyeSize,
                     center.Y - eyeOffsetY - eyeSize,
@@ -773,19 +1237,16 @@ namespace Snake.Views
                 g.FillEllipse(eyeShadow, leftEyeRect.X + 1, leftEyeRect.Y + 1, leftEyeRect.Width, leftEyeRect.Height);
                 g.FillEllipse(white, leftEyeRect);
 
-                // Iris
                 g.FillEllipse(iris,
                     center.X - eyeOffsetX - eyeSize * 0.6f,
                     center.Y - eyeOffsetY - eyeSize * 0.6f,
                     eyeSize * 1.2f, eyeSize * 1.2f);
 
-                // Pupil
                 g.FillEllipse(pupil,
                     center.X - eyeOffsetX - eyeSize * 0.4f,
                     center.Y - eyeOffsetY - eyeSize * 0.4f,
                     eyeSize * 0.8f, eyeSize * 0.8f);
 
-                // Dual gloss highlights
                 g.FillEllipse(gloss,
                     center.X - eyeOffsetX - eyeSize * 0.65f,
                     center.Y - eyeOffsetY - eyeSize * 0.7f,
@@ -795,7 +1256,6 @@ namespace Snake.Views
                     center.Y - eyeOffsetY - eyeSize * 0.2f,
                     eyeSize * 0.25f, eyeSize * 0.25f);
 
-                // Right eye
                 var rightEyeRect = new RectangleF(
                     center.X + eyeOffsetX - eyeSize,
                     center.Y - eyeOffsetY - eyeSize,
@@ -803,19 +1263,16 @@ namespace Snake.Views
                 g.FillEllipse(eyeShadow, rightEyeRect.X + 1, rightEyeRect.Y + 1, rightEyeRect.Width, rightEyeRect.Height);
                 g.FillEllipse(white, rightEyeRect);
 
-                // Iris
                 g.FillEllipse(iris,
                     center.X + eyeOffsetX - eyeSize * 0.6f,
                     center.Y - eyeOffsetY - eyeSize * 0.6f,
                     eyeSize * 1.2f, eyeSize * 1.2f);
 
-                // Pupil
                 g.FillEllipse(pupil,
                     center.X + eyeOffsetX - eyeSize * 0.4f,
                     center.Y - eyeOffsetY - eyeSize * 0.4f,
                     eyeSize * 0.8f, eyeSize * 0.8f);
 
-                // Dual gloss highlights
                 g.FillEllipse(gloss,
                     center.X + eyeOffsetX - eyeSize * 0.65f,
                     center.Y - eyeOffsetY - eyeSize * 0.7f,
@@ -826,7 +1283,6 @@ namespace Snake.Views
                     eyeSize * 0.25f, eyeSize * 0.25f);
             }
 
-            // Animated tongue with forked tip - matching body color scheme
             float tongueWave = (float)Math.Sin(_time * 8) * 0.05f;
             using (var tongueShadow = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
             using (var tongueBrush = new LinearGradientBrush(
@@ -835,19 +1291,16 @@ namespace Snake.Views
                 Color.FromArgb(255, 140, 120),
                 Color.FromArgb(220, 100, 80)))
             {
-                // Shadow
                 var shadowTip = new PointF(center.X + headWidth * 0.7f + 2, center.Y + 2);
                 var shadowLeft = new PointF(center.X + headWidth * 0.3f + 2, center.Y - headHeight * 0.08f + 2);
                 var shadowRight = new PointF(center.X + headWidth * 0.3f + 2, center.Y + headHeight * 0.08f + 2);
                 g.FillPolygon(tongueShadow, new[] { shadowLeft, shadowTip, shadowRight });
 
-                // Main tongue
                 var tongueTip = new PointF(center.X + headWidth * 0.7f, center.Y + tongueWave * headHeight);
                 var tongueLeft = new PointF(center.X + headWidth * 0.3f, center.Y - headHeight * 0.08f);
                 var tongueRight = new PointF(center.X + headWidth * 0.3f, center.Y + headHeight * 0.08f);
                 g.FillPolygon(tongueBrush, new[] { tongueLeft, tongueTip, tongueRight });
 
-                // Fork splits
                 using (var forkPen = new Pen(Color.FromArgb(220, 90, 70), 1.5f))
                 {
                     g.DrawLine(forkPen,
@@ -864,8 +1317,7 @@ namespace Snake.Views
 
         private void DrawGrowthWaves(Graphics g, Rectangle boardRect)
         {
-            // Animation disabled - food travels through body naturally
-            // No visual effect needed
+            // Animation disabled
         }
 
         private void DrawFood(Graphics g, Rectangle boardRect, GameState state)
@@ -887,7 +1339,6 @@ namespace Snake.Views
             g.RotateTransform(rotation);
             g.TranslateTransform(-center.X, -center.Y);
 
-            // Multiple glow layers
             for (int i = 4; i >= 0; i--)
             {
                 float glowSize = foodSize * (1.5f + i * 0.3f);
@@ -900,7 +1351,6 @@ namespace Snake.Views
                 }
             }
 
-            // Main food as star shape
             DrawStar(g, center, foodSize * 0.5f, 5, FoodColor, FoodGlowColor);
 
             g.Transform = m;
@@ -928,7 +1378,6 @@ namespace Snake.Views
                 g.DrawPolygon(outlinePen, starPoints.ToArray());
             }
 
-            // Highlight
             using (var highlight = new SolidBrush(Color.FromArgb(150, 255, 255, 255)))
             {
                 g.FillEllipse(highlight, center.X - radius * 0.2f, center.Y - radius * 0.2f, radius * 0.4f, radius * 0.4f);
@@ -1014,13 +1463,11 @@ namespace Snake.Views
                 float lifeFactor = particle.Life / particle.MaxLife;
                 float radius = particle.Radius * lifeFactor;
 
-                // Glow
                 using (var glow = new SolidBrush(Color.FromArgb((int)(lifeFactor * 80), particle.Color)))
                 {
                     g.FillEllipse(glow, pixelPos.X - radius * 2, pixelPos.Y - radius * 2, radius * 4, radius * 4);
                 }
 
-                // Core
                 using (var brush = new SolidBrush(Color.FromArgb((int)(lifeFactor * 250), particle.Color)))
                 {
                     g.FillEllipse(brush, pixelPos.X - radius, pixelPos.Y - radius, radius * 2, radius * 2);
@@ -1028,114 +1475,259 @@ namespace Snake.Views
             }
         }
 
-        private void DrawEnhancedHUD(Graphics g, Rectangle boardRect, GameState state)
+        private void DrawUserFriendlyHUD(Graphics g, Rectangle boardRect, GameState state)
         {
-            var hudRect = new Rectangle(boardRect.Left, boardRect.Top - 50, boardRect.Width, 45);
+            var hudRect = new Rectangle(boardRect.Left, 20, boardRect.Width, 60);
 
-            // HUD background with glow
-            using (var path = RoundedPath(hudRect, 12))
+            using (var path = RoundedPath(hudRect, 15))
             {
-                // Glow
-                using (var glowBrush = new SolidBrush(Color.FromArgb(60, Accent)))
-                {
-                    var glowRect = new Rectangle(hudRect.X - 2, hudRect.Y - 2, hudRect.Width + 4, hudRect.Height + 4);
-                    using (var glowPath = RoundedPath(glowRect, 14))
-                    {
-                        g.FillPath(glowBrush, glowPath);
-                    }
-                }
-
-                // Background
-                using (var bgBrush = new SolidBrush(Color.FromArgb(180, 20, 20, 40)))
+                using (var bgBrush = new SolidBrush(Color.FromArgb(220, 20, 25, 40)))
                 {
                     g.FillPath(bgBrush, path);
                 }
 
-                // Border
-                using (var pen = new Pen(Accent, 2f))
+                using (var pen = new Pen(Accent, 3f))
                 {
                     g.DrawPath(pen, path);
                 }
             }
 
-            // Score
-            using (var font = new Font("Segoe UI", 18, FontStyle.Bold))
-            using (var textBrush = new SolidBrush(Accent))
-            using (var shadowBrush = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
+            using (var scoreFont = new Font("Segoe UI", 24, FontStyle.Bold))
+            using (var scoreBrush = new SolidBrush(Accent))
+            using (var shadowBrush = new SolidBrush(Color.FromArgb(150, 0, 0, 0)))
             {
-                string scoreText = $"? {state.Score}";
-                var textSize = g.MeasureString(scoreText, font);
-                float x = hudRect.Right - textSize.Width - 20;
-                float y = hudRect.Top + (hudRect.Height - textSize.Height) / 2f;
-                
-                g.DrawString(scoreText, font, shadowBrush, x + 2, y + 2);
-                g.DrawString(scoreText, font, textBrush, x, y);
+                string scoreText = $"{state.Score} PUNKTE";
+                var scoreSize = g.MeasureString(scoreText, scoreFont);
+                float scoreX = hudRect.Left + (hudRect.Width - scoreSize.Width) / 2;
+                float scoreY = hudRect.Top + (hudRect.Height - scoreSize.Height) / 2;
+
+                g.DrawString(scoreText, scoreFont, shadowBrush, scoreX + 2, scoreY + 2);
+                g.DrawString(scoreText, scoreFont, scoreBrush, scoreX, scoreY);
             }
 
-            // Length indicator
-            using (var font = new Font("Segoe UI", 16, FontStyle.Bold))
-            using (var textBrush = new SolidBrush(AccentWarm))
-            using (var shadowBrush = new SolidBrush(Color.FromArgb(100, 0, 0, 0)))
+            using (var lengthFont = new Font("Segoe UI", 14, FontStyle.Bold))
+            using (var lengthBrush = new SolidBrush(AccentWarm))
             {
-                string lengthText = $"?? {state.Snake.Count}";
-                float x = hudRect.Left + 20;
-                float y = hudRect.Top + (hudRect.Height - font.Height) / 2f;
-                
-                g.DrawString(lengthText, font, shadowBrush, x + 2, y + 2);
-                g.DrawString(lengthText, font, textBrush, x, y);
+                string lengthText = $"LÄNGE: {state.Snake.Count}";
+                float lengthX = hudRect.Left + 20;
+                float lengthY = hudRect.Top + (hudRect.Height - lengthFont.Height) / 2;
+
+                g.DrawString(lengthText, lengthFont, lengthBrush, lengthX, lengthY);
             }
 
-            // FPS (bottom right corner)
-            using (var smallFont = new Font("Consolas", 10))
-            using (var infoBrush = new SolidBrush(Color.FromArgb(200, 180, 200, 220)))
+            using (var speedFont = new Font("Segoe UI", 14, FontStyle.Bold))
+            using (var speedBrush = new SolidBrush(Color.FromArgb(255, 200, 100)))
             {
-                string infoText = $"FPS: {_lastFps}";
-                g.DrawString(infoText, smallFont, infoBrush, boardRect.Right - 80, boardRect.Bottom + 8);
+                string speedLevel = GetSpeedLevelDescription(state.CurrentSpeed);
+                string speedText = $"GESCHWINDIGKEIT: {speedLevel}";
+                var speedSize = g.MeasureString(speedText, speedFont);
+                float speedX = hudRect.Right - speedSize.Width - 20;
+                float speedY = hudRect.Top + (hudRect.Height - speedFont.Height) / 2;
+
+                g.DrawString(speedText, speedFont, speedBrush, speedX, speedY);
             }
+
+            DrawMultiplierDisplay(g, boardRect, state);
+        }
+
+        private string GetSpeedLevelDescription(int speed)
+        {
+            return speed switch
+            {
+                <= 60 => "EXTREM",
+                <= 80 => "SEHR SCHNELL",
+                <= 100 => "SCHNELL",
+                <= 120 => "MITTEL",
+                <= 150 => "LANGSAM",
+                _ => "SEHR LANGSAM"
+            };
+        }
+
+        private void DrawMultiplierDisplay(Graphics g, Rectangle boardRect, GameState state)
+        {
+            float speedMultiplier = GetSpeedMultiplier(state.CurrentSpeed);
+            float lengthBonus = 1.0f + (state.Snake.Count / 10.0f) * 0.5f;
+            float totalMultiplier = speedMultiplier * lengthBonus;
+
+            var multiRect = new Rectangle(
+                boardRect.Left,
+                boardRect.Bottom + 10,
+                boardRect.Width,
+                30);
+
+            using (var multiFont = new Font("Segoe UI", 12, FontStyle.Bold))
+            using (var multiBrush = new SolidBrush(Color.FromArgb(255, 200, 255, 100)))
+            using (var bgBrush = new SolidBrush(Color.FromArgb(150, 30, 35, 55)))
+            {
+                string multiText = $"MULTIPLIKATOR: x{totalMultiplier:F1} (Geschwindigkeit: x{speedMultiplier:F1} + Länge: x{lengthBonus:F1})";
+                var multiSize = g.MeasureString(multiText, multiFont);
+                float multiX = multiRect.Left + (multiRect.Width - multiSize.Width) / 2;
+
+                g.FillRectangle(bgBrush, multiX - 10, multiRect.Top, multiSize.Width + 20, multiRect.Height);
+                g.DrawString(multiText, multiFont, multiBrush, multiX, multiRect.Top + 5);
+            }
+        }
+
+        private float GetSpeedMultiplier(int speed)
+        {
+            return speed switch
+            {
+                <= 60 => 3.0f,
+                <= 80 => 2.5f,
+                <= 100 => 2.0f,
+                <= 120 => 1.5f,
+                <= 150 => 1.0f,
+                _ => 0.75f
+            };
         }
 
         private void DrawGameOverMenu(Graphics g)
         {
             var overlay = new Rectangle(0, 0, Width, Height);
-            using (var bg = new SolidBrush(Color.FromArgb(200, 10, 10, 20)))
+            using (var bg = new SolidBrush(Color.FromArgb(220, 10, 10, 20)))
             {
                 g.FillRectangle(bg, overlay);
             }
 
             using (var titleFont = new Font("Segoe UI", 32, FontStyle.Bold))
-            using (var font = new Font("Segoe UI", 16, FontStyle.Bold))
-            using (var small = new Font("Segoe UI", 14, FontStyle.Regular))
+            using (var scoreFont = new Font("Segoe UI", 20, FontStyle.Bold))
+            using (var highscoreFont = new Font("Segoe UI", 16, FontStyle.Bold))
+            using (var hintFont = new Font("Segoe UI", 14, FontStyle.Regular))
+            using (var buttonFont = new Font("Segoe UI", 16, FontStyle.Bold))
+            using (var highscoreSmallFont = new Font("Segoe UI", 10, FontStyle.Regular))
             {
-                // Title with glow
                 string title = "GAME OVER";
-                var ts = g.MeasureString(title, titleFont);
-                float titleX = (Width - ts.Width) / 2f;
-                float titleY = Height * 0.3f;
-                
-                using (var glowBrush = new SolidBrush(Color.FromArgb(150, AccentWarm)))
-                {
-                    g.DrawString(title, titleFont, glowBrush, titleX + 3, titleY + 3);
-                }
+                var titleSize = g.MeasureString(title, titleFont);
+                float titleX = (Width - titleSize.Width) / 2f;
+                float titleY = Height * 0.15f;
+
                 using (var titleBrush = new SolidBrush(AccentWarm))
                 {
                     g.DrawString(title, titleFont, titleBrush, titleX, titleY);
                 }
 
-                // Score
-                string scoreText = $"FINAL SCORE: {_gameOverScore}";
-                var ss = g.MeasureString(scoreText, font);
+                string scoreText = $"ERREICHTE PUNKTE: {_gameOverScore}";
+                var scoreSize = g.MeasureString(scoreText, scoreFont);
+                float scoreY = titleY + titleSize.Height + 20;
+
                 using (var scoreBrush = new SolidBrush(Accent))
                 {
-                    g.DrawString(scoreText, font, scoreBrush, (Width - ss.Width) / 2f, titleY + ts.Height + 20);
+                    g.DrawString(scoreText, scoreFont, scoreBrush, (Width - scoreSize.Width) / 2f, scoreY);
                 }
 
-                // Instructions
-                string hint = "Press R to Restart  �  ESC to Exit";
-                var hs = g.MeasureString(hint, small);
+                if (_isNewHighScore)
+                {
+                    string highscoreText = "NEUER BESTWERT!";
+                    var highscoreSize = g.MeasureString(highscoreText, highscoreFont);
+                    using (var highscoreBrush = new SolidBrush(Color.Gold))
+                    {
+                        g.DrawString(highscoreText, highscoreFont, highscoreBrush,
+                            (Width - highscoreSize.Width) / 2f, scoreY + scoreSize.Height + 10);
+                    }
+                }
+
+                float highscoresY = scoreY + scoreSize.Height + (_isNewHighScore ? 50 : 30);
+                DrawTopHighScores(g, highscoresY, highscoreSmallFont);
+
+                int buttonWidth = 300;
+                int buttonHeight = 50;
+                int buttonSpacing = 20;
+                int startY = (int)(highscoresY + 80);
+
+                var buttons = new[]
+                {
+                    new { Text = "NEUES SPIEL STARTEN", Index = 0 },
+                    new { Text = "BESTENLISTE ANZEIGEN", Index = 1 },
+                    new { Text = "ZUM HAUPTMENÜ", Index = 2 },
+                    new { Text = "SPIEL VERLASSEN", Index = 3 }
+                };
+
+                for (int i = 0; i < buttons.Length; i++)
+                {
+                    var button = new Rectangle(
+                        Width / 2 - buttonWidth / 2,
+                        startY + i * (buttonHeight + buttonSpacing),
+                        buttonWidth,
+                        buttonHeight
+                    );
+
+                    bool isSelected = _gameOverMenuIndex == i;
+                    Color bgColor = isSelected ? GetButtonColor(i) : Color.FromArgb(200, 60, 65, 85);
+                    Color textColor = isSelected ? Color.Black : Color.White;
+
+                    using (var buttonBg = new SolidBrush(bgColor))
+                    using (var buttonText = new SolidBrush(textColor))
+                    {
+                        g.FillRectangle(buttonBg, button);
+
+                        using (var borderPen = new Pen(GetButtonColor(i), 2f))
+                        {
+                            g.DrawRectangle(borderPen, button);
+                        }
+
+                        var buttonTextSize = g.MeasureString(buttons[i].Text, buttonFont);
+                        g.DrawString(buttons[i].Text, buttonFont, buttonText,
+                            button.X + (button.Width - buttonTextSize.Width) / 2,
+                            button.Y + (button.Height - buttonTextSize.Height) / 2);
+                    }
+                }
+
+                string hint = "Verwende ↑↓ oder W/S zum Navigieren • ENTER zum Auswählen";
+                var hintSize = g.MeasureString(hint, hintFont);
                 using (var hintBrush = new SolidBrush(Color.FromArgb(240, 255, 255, 255)))
                 {
-                    g.DrawString(hint, small, hintBrush, (Width - hs.Width) / 2f, titleY + ts.Height + ss.Height + 50);
+                    g.DrawString(hint, hintFont, hintBrush,
+                        (Width - hintSize.Width) / 2f,
+                        startY + buttons.Length * (buttonHeight + buttonSpacing) + 30);
                 }
+            }
+        }
+
+        private Color GetButtonColor(int index)
+        {
+            return index switch
+            {
+                0 => Color.FromArgb(255, 100, 255, 180),
+                1 => Color.FromArgb(255, 100, 180, 255),
+                2 => Color.FromArgb(255, 255, 200, 100),
+                3 => Color.FromArgb(255, 255, 100, 100),
+                _ => Accent
+            };
+        }
+
+        private void DrawTopHighScores(Graphics g, float startY, Font font)
+        {
+            if (_topHighScores.Count == 0) return;
+
+            using (var titleFont = new Font(font.FontFamily, 12, FontStyle.Bold))
+            using (var titleBrush = new SolidBrush(Color.FromArgb(255, 200, 200, 255)))
+            {
+                string title = "TOP 3 BESTWERTE:";
+                var titleSize = g.MeasureString(title, titleFont);
+                g.DrawString(title, titleFont, titleBrush, (Width - titleSize.Width) / 2f, startY);
+            }
+
+            float y = startY + 25;
+            for (int i = 0; i < Math.Min(3, _topHighScores.Count); i++)
+            {
+                var entry = _topHighScores[i];
+                string scoreText = $"{i + 1}. {entry.PlayerName} - {entry.Score} Punkte";
+
+                Color textColor = i switch
+                {
+                    0 => Color.Gold,
+                    1 => Color.Silver,
+                    2 => Color.FromArgb(255, 205, 127),
+                    _ => Color.White
+                };
+
+                using (var scoreBrush = new SolidBrush(textColor))
+                {
+                    var textSize = g.MeasureString(scoreText, font);
+                    g.DrawString(scoreText, font, scoreBrush, (Width - textSize.Width) / 2f, y);
+                }
+
+                y += 18;
             }
         }
 
@@ -1151,19 +1743,21 @@ namespace Snake.Views
             return path;
         }
 
-        private Color LerpColor(Color a, Color b, float t)
-        {
-            t = Math.Max(0f, Math.Min(1f, t));
-            return Color.FromArgb(
-                (int)(a.R * (1 - t) + b.R * t),
-                (int)(a.G * (1 - t) + b.G * t),
-                (int)(a.B * (1 - t) + b.B * t)
-            );
-        }
-
         private int SafeSnakeCount(GameState state)
         {
             return state.Snake == null ? 0 : state.Snake.Count;
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (disposing)
+            {
+                _animTimer?.Stop();
+                _animTimer?.Dispose();
+                _startBackgroundImage?.Dispose();
+                _mainMenuBackgroundImage?.Dispose();
+            }
+            base.Dispose(disposing);
         }
 
         private struct Particle

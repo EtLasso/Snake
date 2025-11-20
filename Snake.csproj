@@ -14,4 +14,10 @@
     <Folder Include="Views\" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="snake.png">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

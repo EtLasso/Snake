@@ -1,4 +1,5 @@
 using System;
+using System.Linq;
 using System.Windows.Forms;
 using Snake.Models;
 using Snake.Views;
@@ -13,22 +14,29 @@ namespace Snake.Controllers
         private bool _isPaused;
         private int _gameSpeed;
 
-        public GameController(GameState gameState, GameView gameView)
+        // NEUE EVENTS für Navigation
+        public event Action MainMenuRequested;
+        public event Action ExitRequested;
+        public event Action HighScoresRequested;
+
+        public GameController(GameState gameState, GameView gameView, int initialSpeed = 100)
         {
             _gameState = gameState;
             _gameView = gameView;
             _isPaused = false;
-            _gameSpeed = 100;
+            _gameSpeed = initialSpeed;
 
             _gameTimer = new System.Windows.Forms.Timer();
             _gameTimer.Interval = _gameSpeed;
             _gameTimer.Tick += GameTimer_Tick;
 
             _gameView.KeyPressed += OnKeyPressed;
-
-            // NEU: auf View-Events hören
             _gameView.RestartRequested += OnRestartRequested;
             _gameView.ExitRequested += OnExitRequested;
+            _gameView.MainMenuRequested += OnMainMenuRequested;
+            _gameView.HighScoresRequested += OnHighScoresRequested;
+
+            UpdateGameSpeed();
         }
 
         public void Start()
@@ -37,7 +45,7 @@ namespace Snake.Controllers
             _isPaused = false;
             _gameTimer.Start();
             _gameView.UpdateView(_gameState);
-            _gameView.HideGameOverMenu(); // Menü verstecken beim Start
+            _gameView.HideGameOverMenu();
         }
 
         public void Stop()
@@ -70,8 +78,26 @@ namespace Snake.Controllers
                 if (_gameState.GameOver)
                 {
                     _gameTimer.Stop();
-                    // Zeige In-Game Menü statt Dialog!
-                    _gameView.ShowGameOverMenu(_gameState.Score);
+                    
+                    // Speichere Highscore bevor das Game Over Menu angezeigt wird
+                    SaveHighScore();
+                    
+                    // Get top high scores from the public HighScores property
+                    var topScores = _gameState.HighScores
+                        .OrderByDescending(hs => hs.Score)
+                        .Take(5)
+                        .ToList();
+                    
+                    // Prüfe ob es ein neuer Highscore ist
+                    bool isNewHighScore = topScores.Count == 0 || _gameState.Score >= topScores[0].Score;
+
+                    _gameView.ShowGameOverMenu(
+                        _gameState.Score,
+                        _gameState.CurrentSpeed,
+                        _gameState.Snake.Count,
+                        topScores,
+                        isNewHighScore
+                    );
                 }
                 else
                 {
@@ -80,9 +106,30 @@ namespace Snake.Controllers
             }
         }
 
+        private void SaveHighScore()
+        {
+            // Automatisch Highscore speichern wenn das Spiel endet
+            if (_gameState.Score > 0)
+            {
+                // Prüfe ob Score hoch genug für Top 10 ist
+                var currentHighScores = _gameState.HighScores.OrderByDescending(hs => hs.Score).ToList();
+                
+                if (currentHighScores.Count < 10 || _gameState.Score > currentHighScores.Last().Score)
+                {
+                    // Standardname, könnte später durch Benutzereingabe ersetzt werden
+                    string playerName = "Player";
+                    
+                    // Prüfe ob es bereits einen Eintrag mit diesem Score gibt
+                    if (!currentHighScores.Any(hs => hs.Score == _gameState.Score))
+                    {
+                        _gameState.AddHighScore(playerName, _gameState.Score);
+                    }
+                }
+            }
+        }
+
         private void OnKeyPressed(object sender, KeyEventArgs e)
         {
-            // Bei Game Over nur Menü-Steuerung
             if (_gameState.GameOver)
             {
                 _gameView.HandleGameOverInput(e.KeyCode);
@@ -91,7 +138,6 @@ namespace Snake.Controllers
 
             switch (e.KeyCode)
             {
-                // Bewegung
                 case Keys.Up:
                 case Keys.W:
                     _gameState.ChangeDirection(GameState.Direction.Up);
@@ -112,7 +158,6 @@ namespace Snake.Controllers
                     _gameState.ChangeDirection(GameState.Direction.Right);
                     break;
 
-                // Spielsteuerung
                 case Keys.Space:
                 case Keys.Escape:
                     Pause();
@@ -122,7 +167,6 @@ namespace Snake.Controllers
                     Start();
                     break;
 
-                // Geschwindigkeit
                 case Keys.Add:
                 case Keys.Oemplus:
                     IncreaseSpeed();
@@ -141,6 +185,7 @@ namespace Snake.Controllers
             {
                 _gameSpeed -= 10;
                 _gameTimer.Interval = _gameSpeed;
+                UpdateGameSpeed();
             }
         }
 
@@ -150,7 +195,13 @@ namespace Snake.Controllers
             {
                 _gameSpeed += 10;
                 _gameTimer.Interval = _gameSpeed;
+                UpdateGameSpeed();
             }
+        }
+
+        private void UpdateGameSpeed()
+        {
+            _gameState.CurrentSpeed = _gameSpeed;
         }
 
         public void Dispose()
@@ -158,13 +209,12 @@ namespace Snake.Controllers
             _gameTimer?.Stop();
             _gameTimer?.Dispose();
             _gameView.KeyPressed -= OnKeyPressed;
-
-            // NEU: Events abmelden
             _gameView.RestartRequested -= OnRestartRequested;
             _gameView.ExitRequested -= OnExitRequested;
+            _gameView.MainMenuRequested -= OnMainMenuRequested;
+            _gameView.HighScoresRequested -= OnHighScoresRequested;
         }
 
-        // Wird vom GameView aufgerufen
         public void OnRestartRequested()
         {
             Start();
@@ -172,7 +222,22 @@ namespace Snake.Controllers
 
         public void OnExitRequested()
         {
-            Application.Exit();
+            // Event auslösen statt direkt Application.Exit zu verwenden
+            ExitRequested?.Invoke();
+        }
+
+        public void OnMainMenuRequested()
+        {
+            // Event auslösen um zurück zum Hauptmenü zu gehen
+            Stop();
+            MainMenuRequested?.Invoke();
+        }
+
+        public void OnHighScoresRequested()
+        {
+            // Event auslösen, damit Form1 die HighscoresForm öffnen kann
+            // Wir rufen NICHT _gameView.ShowHighScores() auf, um die Rekursion zu vermeiden
+            HighScoresRequested?.Invoke();
         }
     }
 }

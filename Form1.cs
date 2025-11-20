@@ -1,6 +1,7 @@
 using Snake.Controllers;
 using Snake.Models;
 using Snake.Views;
+using Snake.Data;
 
 namespace Snake
 {
@@ -9,6 +10,7 @@ namespace Snake
         private GameState _gameState;
         private GameView _gameView;
         private GameController _gameController;
+        private HighscoreManager _highscoreManager;
 
         public Form1()
         {
@@ -39,7 +41,15 @@ namespace Snake
             };
             this.Controls.Add(_gameView);
 
+            // Highscore-Manager initialisieren
+            _highscoreManager = new HighscoreManager();
+
             _gameController = new GameController(_gameState, _gameView);
+            
+            // Controller-Events abonnieren
+            _gameController.ExitRequested += OnExitRequested;
+            _gameController.HighScoresRequested += OnHighScoresRequested;
+            
             _gameController.Start();
 
             _gameView.Focus();
@@ -50,10 +60,32 @@ namespace Snake
             _gameController.Start();
         }
 
+        private void OnExitRequested()
+        {
+            this.Close();
+        }
+
+        private void OnHighScoresRequested()
+        {
+            // Öffne die Highscores-Form
+            using (var highscoresForm = new HighscoresForm(_highscoreManager))
+            {
+                highscoresForm.ShowDialog(this);
+            }
+            
+            // Fokus zurück zum GameView nach dem Schließen
+            _gameView.Focus();
+        }
+
         protected override void OnFormClosing(FormClosingEventArgs e)
         {
-            _gameController?.Stop();
-            _gameController?.Dispose();
+            if (_gameController != null)
+            {
+                _gameController.ExitRequested -= OnExitRequested;
+                _gameController.HighScoresRequested -= OnHighScoresRequested;
+                _gameController.Stop();
+                _gameController.Dispose();
+            }
             base.OnFormClosing(e);
         }
     }
