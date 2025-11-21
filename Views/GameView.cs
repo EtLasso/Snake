@@ -1159,12 +1159,10 @@ namespace Snake.Views
         {
             if (state?.Snake == null || state.Snake.Count == 0) return;
 
-            // Grid-Größen berechnen
             float cw = boardRect.Width / (float)state.BoardWidth;
             float ch = boardRect.Height / (float)state.BoardHeight;
             float thickness = Math.Min(cw, ch) * 0.8f;
 
-            // Punkte berechnen
             var points = state.Snake.Select(p => new PointF(
                 boardRect.Left + p.X * cw + cw / 2f,
                 boardRect.Top + p.Y * ch + ch / 2f
@@ -1176,28 +1174,43 @@ namespace Snake.Views
                 return;
             }
 
-            // Farbe basierend auf Power-Up
             Color bodyColor = state.CurrentPowerUp switch
             {
                 GameState.PowerUpType.Magnet => Color.Cyan,
                 GameState.PowerUpType.Ghost => Color.FromArgb(180, 220, 255),
                 GameState.PowerUpType.DoubleScore => Color.Magenta,
-                _ => Color.FromArgb(100, 255, 100) // Standard Grün
+                _ => Color.FromArgb(100, 255, 100)
             };
 
-            // Elegante Körperlinie zeichnen
+            // ZUERST den Power-Up-Effekt zeichnen (dünner als Hauptkörper)
+            if (state.CurrentPowerUp != GameState.PowerUpType.None)
+            {
+                DrawSubtlePowerUpEffects(g, points, thickness, state);
+            }
+
+            // DANN den Hauptkörper darüber zeichnen
             using (var bodyPen = new Pen(bodyColor, thickness))
             {
                 bodyPen.LineJoin = LineJoin.Round;
                 bodyPen.StartCap = LineCap.Round;
                 bodyPen.EndCap = LineCap.Round;
-                g.DrawLines(bodyPen, points);
-            }
-
-            // Subtile Power-Up Effekte
-            if (state.CurrentPowerUp != GameState.PowerUpType.None)
-            {
-                DrawSubtlePowerUpEffects(g, points, thickness, state);
+                
+                // ✅ FIX: Zeichne Segmente einzeln und überspringe Wraps
+                // Wenn zwei Segmente zu weit voneinander entfernt sind, ist ein Wrap passiert
+                float maxDistance = Math.Max(cw, ch) * 1.5f; // Schwellwert für Wrap-Erkennung
+                
+                for (int i = 0; i < points.Length - 1; i++)
+                {
+                    float dx = Math.Abs(points[i].X - points[i + 1].X);
+                    float dy = Math.Abs(points[i].Y - points[i + 1].Y);
+                    float distance = (float)Math.Sqrt(dx * dx + dy * dy);
+                    
+                    // Nur Linie zeichnen wenn Segmente benachbart sind (kein Wrap)
+                    if (distance < maxDistance)
+                    {
+                        g.DrawLine(bodyPen, points[i], points[i + 1]);
+                    }
+                }
             }
 
             // Kopf zeichnen
@@ -1209,6 +1222,21 @@ namespace Snake.Views
         {
             float pulse = (float)(Math.Sin(DateTime.Now.TimeOfDay.TotalMilliseconds * 0.005) * 0.2 + 0.8);
 
+            // ✅ Berechne Zellgröße aus points für Wrap-Erkennung
+            float avgCellSize = 20f; // Default-Wert
+            if (points.Length >= 2)
+            {
+                // Schätze Zellgröße von benachbarten Punkten
+                for (int i = 0; i < Math.Min(5, points.Length - 1); i++)
+                {
+                    float dx = Math.Abs(points[i].X - points[i + 1].X);
+                    float dy = Math.Abs(points[i].Y - points[i + 1].Y);
+                    if (dx > 0 && dx < avgCellSize) avgCellSize = dx;
+                    if (dy > 0 && dy < avgCellSize) avgCellSize = dy;
+                }
+            }
+            float maxDistance = avgCellSize * 1.5f;
+
             switch (state.CurrentPowerUp)
             {
                 case GameState.PowerUpType.Magnet:
@@ -1217,7 +1245,14 @@ namespace Snake.Views
                     {
                         effectPen.DashStyle = DashStyle.Dot;
                         effectPen.DashPattern = new float[] { 2, 3 };
-                        g.DrawLines(effectPen, points);
+                        // ✅ Mit Wrap-Erkennung zeichnen
+                        for (int i = 0; i < points.Length - 1; i++)
+                        {
+                            float dx = Math.Abs(points[i].X - points[i + 1].X);
+                            float dy = Math.Abs(points[i].Y - points[i + 1].Y);
+                            if (Math.Sqrt(dx * dx + dy * dy) < maxDistance)
+                                g.DrawLine(effectPen, points[i], points[i + 1]);
+                        }
                     }
                     break;
 
@@ -1226,7 +1261,14 @@ namespace Snake.Views
                     using (var ghostPen = new Pen(Color.FromArgb(40, 255, 255, 255), thickness + 2))
                     {
                         ghostPen.LineJoin = LineJoin.Round;
-                        g.DrawLines(ghostPen, points);
+                        // ✅ Mit Wrap-Erkennung zeichnen
+                        for (int i = 0; i < points.Length - 1; i++)
+                        {
+                            float dx = Math.Abs(points[i].X - points[i + 1].X);
+                            float dy = Math.Abs(points[i].Y - points[i + 1].Y);
+                            if (Math.Sqrt(dx * dx + dy * dy) < maxDistance)
+                                g.DrawLine(ghostPen, points[i], points[i + 1]);
+                        }
                     }
                     break;
 
@@ -1236,7 +1278,14 @@ namespace Snake.Views
                     {
                         scorePen.DashStyle = DashStyle.Dash;
                         scorePen.DashPattern = new float[] { 3, 2 };
-                        g.DrawLines(scorePen, points);
+                        // ✅ Mit Wrap-Erkennung zeichnen
+                        for (int i = 0; i < points.Length - 1; i++)
+                        {
+                            float dx = Math.Abs(points[i].X - points[i + 1].X);
+                            float dy = Math.Abs(points[i].Y - points[i + 1].Y);
+                            if (Math.Sqrt(dx * dx + dy * dy) < maxDistance)
+                                g.DrawLine(scorePen, points[i], points[i + 1]);
+                        }
                     }
                     break;
             }

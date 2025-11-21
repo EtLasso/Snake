@@ -201,9 +201,8 @@ namespace Snake.Models
             if (GameOver || IsPaused) return;
 
             UpdateGameTime();
-            UpdatePowerUpLogic(); // <--- NEU: PowerUps verwalten
+            UpdatePowerUpLogic();
 
-            // Zeitlimit prüfen
             if (CurrentGameMode == GameMode.TimeAttack && GameTime >= _timeLimit)
             {
                 HandleTimeUp();
@@ -213,39 +212,33 @@ namespace Snake.Models
             CurrentDirection = _nextDirection;
             JustAte = false;
 
-            // Bewege den Kopf
             var head = Snake[0];
             var newHead = CalculateNewHeadPosition(head);
 
-            // --- NEU: GHOST MODUS (Durch Wände gehen) ---
-            if (CurrentPowerUp == PowerUpType.Ghost)
+            // Ghost Modus oder Survival: Durch Wände gehen
+            if (CurrentPowerUp == PowerUpType.Ghost || CurrentGameMode == GameMode.Survival)
             {
-                // Wrap Around (Teleport zur anderen Seite)
                 newHead = HandleWallWrap(newHead);
             }
             else if (CheckWallCollision(newHead) && !IsInvincible)
             {
-                // Für Survival-Modus: Durch Wände gehen
-                if (CurrentGameMode == GameMode.Survival)
-                {
-                    newHead = HandleWallWrap(newHead);
-                }
-                else
-                {
-                    EndGame();
-                    return;
-                }
+                EndGame();
+                return;
             }
 
-            // Selbstkollision prüfen (außer im Ghost Modus)
+            // ✅ Self-Collision prüfen NACH dem Wrap (aber im Ghost-Modus ignorieren)
             if (CurrentPowerUp != PowerUpType.Ghost && CheckSelfCollision(newHead) && !IsInvincible)
             {
                 EndGame();
                 return;
             }
 
-            // --- NEU: Power-Up einsammeln? ---
-            if (PowerUpItemPosition.HasValue && newHead == PowerUpItemPosition.Value)
+            // ✅ JETZT prüfen ob Futter/PowerUp gegessen wird (NACH Wrap!)
+            bool willEatFood = (newHead == FoodPosition);
+            bool willEatPowerUp = (PowerUpItemPosition.HasValue && newHead == PowerUpItemPosition.Value);
+
+            // ✅ PowerUp einsammeln (Bevor Kopf hinzugefügt wird)
+            if (willEatPowerUp)
             {
                 ActivatePowerUp(ItemOnBoard);
                 PowerUpItemPosition = null;
@@ -253,28 +246,33 @@ namespace Snake.Models
                 OnGameMessage?.Invoke($"POWERUP: {CurrentPowerUp}!");
             }
 
-            // Füge neuen Kopf hinzu
+            // ✅ Kopf hinzufügen zur neuen Position
             Snake.Insert(0, newHead);
             _snakePositions.Add(newHead);
 
-            // Prüfe auf Essen
-            if (newHead == FoodPosition)
+            // ✅ Futter verarbeiten (lässt Schlange wachsen durch NICHT-Entfernen des Schwanzes)
+            if (willEatFood)
             {
                 ProcessFoodCollision();
             }
             else
             {
-                // Entferne Schwanz, wenn kein Essen gegessen wurde
+                // ✅ Schwanz entfernen wenn KEIN Futter gegessen wurde
+                // (Schlange behält konstante Länge oder wird kürzer)
                 var tail = Snake[Snake.Count - 1];
                 Snake.RemoveAt(Snake.Count - 1);
                 _snakePositions.Remove(tail);
-                _consecutiveFoods = 0; // Reset Combo
+                _consecutiveFoods = 0;
+                
+                // DEBUG: Überprüfe ob HashSet synchron ist
+                if (Snake.Count != _snakePositions.Count)
+                {
+                    System.Diagnostics.Debug.WriteLine($"WARNUNG: Snake.Count={Snake.Count} != _snakePositions.Count={_snakePositions.Count}");
+                }
             }
 
-            // Update Power-Ups und Timer
             UpdatePowerUps();
             UpdateFoodTimer();
-
             OnSnakeMoved?.Invoke();
         }
 
@@ -416,24 +414,22 @@ namespace Snake.Models
             JustAte = true;
             FoodDigestionProgress = 100;
 
-            // HighScore aktualisieren
+            // ✅ KEIN Snake.RemoveAt() hier - die Schlange bleibt länger weil Kopf schon hinzugefügt wurde
+
             if (Score > HighScore)
             {
                 HighScore = Score;
                 OnHighScoreChanged?.Invoke(HighScore);
             }
 
-            // Power-Up Effekte anwenden
             ApplyFoodEffects();
 
-            // Combo-Nachricht
             if (_consecutiveFoods >= 3)
             {
                 OnGameMessage?.Invoke($"Combo! {_consecutiveFoods} in a row!");
             }
 
             PlaceFood();
-
             OnScoreChanged?.Invoke(Score);
             OnFoodPlaced?.Invoke(FoodPosition);
         }
